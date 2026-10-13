@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1170 1640" width="1170" height="1640" role="img" aria-label="Swimlane flow chart. The vendor agrees a namespace with the core team, who creates the module repository in the unifyamerica GitHub org and adds the vendor as an outside collaborator. The vendor builds from the template, passes local lint, type-check, test and build checks, and pushes a version tag. The org's release workflow checks and builds the module in a read-only job, then attests the tarball and publishes it to GitHub Packages in a job that runs no vendor code. The vendor asks the core team to install it; the core team opens the install PR. GitHub Actions runs the plugin contract check: the attestation from the org workflow and the tag, the lockfile hash, exact pins, the import guardrails on the shipped code, the boot gate and the SPA's UI tests. A failed check or a core team review can send it back to the vendor. Once merged, the module ships with the next API and SPA deploy, must pass the API boot gate against the namespace registry, and stays off in every organization until an org admin turns it on and its onEnabled hook has run.">
+  <title>DemLeagueOS plugin contribution cycle</title>
+  <style>
+  .lane-a { fill: #e9edf2; }
+  .lane-b { fill: #eef1f5; }
+  .lane-title { font: 700 14px "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;  letter-spacing: 0.06em; text-transform: uppercase; fill: #17212c; }
+  .lane-sub { font: 400 11.5px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #5a6878; }
+  .box { fill: #ffffff; stroke: #c3ccd7; stroke-width: 1.2; }
+  .box.auto { stroke: #0d7a70; stroke-width: 1.8; }
+  .box.human { stroke: #a9500c; stroke-width: 1.8; }
+  .box.pending { stroke-dasharray: 6 4; }
+  .box.live { fill: #3346c4; stroke: #3346c4; }
+  .t { font: 600 13px "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; fill: #17212c; }
+  .s { font: 400 11px "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; fill: #5a6878; }
+  .m { font: 400 11px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #5a6878; }
+  .tm { font: 500 12px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #17212c; }
+  .tag { font: 500 10.5px "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0d7a70; }
+  .on-live { fill: #ffffff; }
+  .edge { fill: none; stroke: #5a6878; stroke-width: 1.4; }
+  .edge.back { stroke: #a9500c; stroke-dasharray: 5 4; }
+  .edge.fail { stroke: #0d7a70; stroke-dasharray: 5 4; }
+  .edge.loop { stroke: #3346c4; stroke-dasharray: 5 4; }
+  .ah { fill: #5a6878; }
+  .ah-back { fill: #a9500c; }
+  .ah-fail { fill: #0d7a70; }
+  .ah-loop { fill: #3346c4; }
+  .lbl { font: 500 11px "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; fill: #5a6878; paint-order: stroke; stroke: #f3f5f8; stroke-width: 5px; stroke-linejoin: round; }
+  .lbl.on-lane { stroke: #eef1f5; }
+  .lbl.back { fill: #a9500c; }
+  .lbl.fail { fill: #0d7a70; }
+  .lbl.loop { fill: #3346c4; }
+
+  </style>
+  <rect width="1170" height="1640" fill="#f3f5f8"/>
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ah-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-back" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ah-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-fail" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- Lanes -->
+          <rect class="lane-a" x="70" y="16" width="270" height="1614"/>
+          <rect class="lane-b" x="340" y="16" width="270" height="1614"/>
+          <rect class="lane-a" x="610" y="16" width="270" height="1614"/>
+          <rect class="lane-b" x="880" y="16" width="270" height="1614"/>
+          <text class="lane-title" x="205" y="44" text-anchor="middle">Vendor</text>
+          <text class="lane-sub" x="205" y="62" text-anchor="middle">own module repo only</text>
+          <text class="lane-title" x="475" y="44" text-anchor="middle">GitHub</text>
+          <text class="lane-sub" x="475" y="62" text-anchor="middle">unifyamerica org · Packages</text>
+          <text class="lane-title" x="745" y="44" text-anchor="middle">DemLeagueOS repo</text>
+          <text class="lane-sub" x="745" y="62" text-anchor="middle">core team (CODEOWNERS)</text>
+          <text class="lane-title" x="1015" y="44" text-anchor="middle">Production</text>
+          <text class="lane-sub" x="1015" y="62" text-anchor="middle">API + SPA, per organization</text>
+
+          <!-- A: namespace and repository -->
+          <rect class="box" x="105" y="84" width="200" height="66" rx="8"/>
+          <text class="t" x="205" y="106" text-anchor="middle">Request a namespace</text>
+          <text class="m" x="205" y="124" text-anchor="middle">&lt;vendor&gt;.&lt;module&gt;</text>
+          <text class="s" x="205" y="138" text-anchor="middle">e.g. acme.notes</text>
+
+          <rect class="box human" x="645" y="84" width="200" height="66" rx="8"/>
+          <text class="t" x="745" y="106" text-anchor="middle">Agree it, create the repo</text>
+          <text class="m" x="745" y="124" text-anchor="middle">demleague-plugin-&lt;v&gt;-&lt;m&gt;</text>
+          <text class="s" x="745" y="138" text-anchor="middle">vendor: outside collaborator</text>
+
+          <line class="edge" x1="305" y1="106" x2="643" y2="106" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="475" y="100" text-anchor="middle">asks the core team</text>
+          <line class="edge" x1="645" y1="132" x2="307" y2="132" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="475" y="147" text-anchor="middle">repo access</text>
+
+          <!-- B: template -->
+          <line class="edge" x1="205" y1="150" x2="205" y2="178" marker-end="url(#ah)"/>
+          <rect class="box" x="105" y="180" width="200" height="52" rx="8"/>
+          <text class="t" x="205" y="201" text-anchor="middle">Start from the template</text>
+          <text class="s" x="205" y="219" text-anchor="middle">acme-notes + release workflow</text>
+
+          <!-- C: build -->
+          <line class="edge" x1="205" y1="232" x2="205" y2="260" marker-end="url(#ah)"/>
+          <rect class="box" x="105" y="262" width="200" height="66" rx="8"/>
+          <text class="t" x="205" y="284" text-anchor="middle">Write manifest, code, tests</text>
+          <text class="s" x="205" y="302" text-anchor="middle">manifest.ts: every need</text>
+          <text class="s" x="205" y="316" text-anchor="middle">server harness + UI tests</text>
+
+          <!-- D: local checks -->
+          <line class="edge" x1="205" y1="328" x2="205" y2="356" marker-end="url(#ah)"/>
+          <rect class="box auto" x="105" y="358" width="200" height="80" rx="8"/>
+          <text class="t" x="205" y="380" text-anchor="middle">Local checks</text>
+          <text class="s" x="205" y="398" text-anchor="middle">lint: allowed imports only,</text>
+          <text class="s" x="205" y="412" text-anchor="middle">no process.env, eval, require</text>
+          <text class="s" x="205" y="426" text-anchor="middle">type-check · test · build</text>
+          <path class="edge fail" d="M105 398 H62 V310 H101" marker-end="url(#ah-fail)"/>
+          <text class="lbl fail" x="54" y="356" text-anchor="middle" transform="rotate(-90 54 356)">fails</text>
+
+          <!-- E: tag and org release -->
+          <line class="edge" x1="205" y1="438" x2="205" y2="466" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="213" y="457">pass</text>
+          <rect class="box" x="105" y="468" width="200" height="66" rx="8"/>
+          <text class="t" x="205" y="490" text-anchor="middle">Push a version tag</text>
+          <text class="m" x="205" y="508" text-anchor="middle">v&lt;x.y.z&gt;</text>
+          <text class="s" x="205" y="522" text-anchor="middle">= package.json = manifest</text>
+
+          <line class="edge" x1="305" y1="490" x2="373" y2="490" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="340" y="484" text-anchor="middle">triggers</text>
+
+          <rect class="box auto" x="375" y="468" width="200" height="94" rx="8"/>
+          <text class="t" x="475" y="490" text-anchor="middle">Org release workflow</text>
+          <text class="s" x="475" y="508" text-anchor="middle">build: checks, tests, pack</text>
+          <text class="s" x="475" y="522" text-anchor="middle">name = repo · tag = version</text>
+          <text class="s" x="475" y="536" text-anchor="middle">publish: attest the tarball</text>
+          <text class="tag" x="475" y="552" text-anchor="middle">no vendor code when signing</text>
+
+          <line class="edge" x1="475" y1="562" x2="475" y2="590" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="483" y="582">publishes</text>
+          <rect class="box auto" x="375" y="592" width="200" height="80" rx="8"/>
+          <text class="t" x="475" y="614" text-anchor="middle">GitHub Packages</text>
+          <text class="m" x="475" y="632" text-anchor="middle">@unifyamerica/demleague-</text>
+          <text class="m" x="475" y="646" text-anchor="middle">plugin-&lt;v&gt;-&lt;m&gt;@x.y.z</text>
+          <text class="s" x="475" y="660" text-anchor="middle">+ SLSA build attestation</text>
+
+          <!-- F: install request + PR -->
+          <line class="edge" x1="205" y1="534" x2="205" y2="700" marker-end="url(#ah)"/>
+          <rect class="box" x="105" y="702" width="200" height="52" rx="8"/>
+          <text class="t" x="205" y="723" text-anchor="middle">Ask to install it</text>
+          <text class="s" x="205" y="741" text-anchor="middle">justify each permission</text>
+
+          <line class="edge" x1="305" y1="728" x2="643" y2="728" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="412" y="722" text-anchor="middle">asks the core team</text>
+          <path class="edge" d="M475 672 V770 H643" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="560" y="764" text-anchor="middle">pins exact version</text>
+
+          <rect class="box human" x="645" y="702" width="200" height="94" rx="8"/>
+          <text class="t" x="745" y="724" text-anchor="middle">Install PR (core team)</text>
+          <text class="s" x="745" y="742" text-anchor="middle">exact pins: api + frontend</text>
+          <text class="m" x="745" y="756" text-anchor="middle">plugins.config.ts ×2</text>
+          <text class="s" x="745" y="770" text-anchor="middle">registry entry request</text>
+          <text class="s" x="745" y="784" text-anchor="middle">from a branch in this repo</text>
+
+          <!-- G: contract check in CI -->
+          <line class="edge" x1="745" y1="796" x2="745" y2="824" marker-end="url(#ah)"/>
+          <rect class="box auto" x="645" y="826" width="200" height="132" rx="8"/>
+          <text class="t" x="745" y="848" text-anchor="middle">Plugin contract (CI)</text>
+          <text class="s" x="745" y="866" text-anchor="middle">attested by the org workflow</text>
+          <text class="s" x="745" y="880" text-anchor="middle">from v&lt;x.y.z&gt; · lockfile hash</text>
+          <text class="s" x="745" y="894" text-anchor="middle">exact pins · both configs</text>
+          <text class="s" x="745" y="908" text-anchor="middle">shipped dist/: allowed imports</text>
+          <text class="s" x="745" y="922" text-anchor="middle">boot gate · SPA UI tests</text>
+          <text class="tag" x="745" y="944" text-anchor="middle">+ lint, types, tests, e2e</text>
+          <path class="edge back" d="M645 892 H38"/>
+          <text class="lbl back on-lane" x="560" y="886" text-anchor="middle">check fails</text>
+
+          <!-- H: review -->
+          <line class="edge" x1="745" y1="958" x2="745" y2="986" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="757" y="978">CODEOWNERS · job summary</text>
+          <polygon class="box human" points="635,1034 745,988 855,1034 745,1080"/>
+          <text class="t" x="745" y="1030" text-anchor="middle">Core team review</text>
+          <text class="s" x="745" y="1046" text-anchor="middle">asks vs approvals, tier</text>
+
+          <path class="edge back" d="M635 1034 H38 V280 H101" marker-end="url(#ah-back)"/>
+          <text class="lbl back on-lane" x="475" y="1028" text-anchor="middle">changes requested</text>
+
+          <!-- I: merge + release -->
+          <line class="edge" x1="745" y1="1080" x2="745" y2="1108" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="757" y="1100">approved</text>
+          <rect class="box" x="645" y="1110" width="200" height="52" rx="8"/>
+          <text class="t" x="745" y="1131" text-anchor="middle">Merge to main</text>
+          <text class="s" x="745" y="1149" text-anchor="middle">approvals land in the registry</text>
+
+          <line class="edge" x1="845" y1="1136" x2="913" y2="1136" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="880" y="1130" text-anchor="middle">ships in</text>
+          <rect class="box" x="915" y="1110" width="200" height="52" rx="8"/>
+          <text class="t" x="1015" y="1131" text-anchor="middle">Next API + SPA deploy</text>
+          <text class="s" x="1015" y="1149" text-anchor="middle">SPA bundles ./ui at build</text>
+
+          <!-- J: registry + boot gate -->
+          <line class="edge" x1="745" y1="1162" x2="745" y2="1190" marker-end="url(#ah)"/>
+          <rect class="box" x="645" y="1192" width="200" height="80" rx="8"/>
+          <text class="tm" x="745" y="1214" text-anchor="middle">namespace-registry.json</text>
+          <text class="s" x="745" y="1232" text-anchor="middle">approved asks · tier · ceilings</text>
+          <text class="s" x="745" y="1246" text-anchor="middle">enabled: false = kill switch</text>
+          <text class="s" x="745" y="1260" text-anchor="middle">core-team owned</text>
+
+          <line class="edge" x1="1015" y1="1162" x2="1015" y2="1190" marker-end="url(#ah)"/>
+          <line class="edge" x1="845" y1="1232" x2="913" y2="1232" marker-end="url(#ah)"/>
+          <text class="lbl on-lane" x="880" y="1226" text-anchor="middle">read at boot</text>
+          <rect class="box auto" x="915" y="1192" width="200" height="94" rx="8"/>
+          <text class="t" x="1015" y="1214" text-anchor="middle">API boot gate</text>
+          <text class="s" x="1015" y="1232" text-anchor="middle">manifest + registry must agree,</text>
+          <text class="s" x="1015" y="1246" text-anchor="middle">else the API won't start</text>
+          <text class="s" x="1015" y="1260" text-anchor="middle">limits above the ceiling</text>
+          <text class="s" x="1015" y="1274" text-anchor="middle">are capped, with a warning</text>
+
+          <!-- K–N: per organization -->
+          <line class="edge" x1="1015" y1="1286" x2="1015" y2="1314" marker-end="url(#ah)"/>
+          <rect class="box" x="915" y="1316" width="200" height="52" rx="8"/>
+          <text class="t" x="1015" y="1337" text-anchor="middle">Off in every organization</text>
+          <text class="s" x="1015" y="1355" text-anchor="middle">installed is not turned on</text>
+
+          <line class="edge" x1="1015" y1="1368" x2="1015" y2="1396" marker-end="url(#ah)"/>
+          <rect class="box human" x="915" y="1398" width="200" height="52" rx="8"/>
+          <text class="t" x="1015" y="1419" text-anchor="middle">Org admin turns it on</text>
+          <text class="s" x="1015" y="1437" text-anchor="middle">Modules page, per organization</text>
+
+          <line class="edge" x1="1015" y1="1450" x2="1015" y2="1478" marker-end="url(#ah)"/>
+          <rect class="box auto" x="915" y="1480" width="200" height="52" rx="8"/>
+          <text class="t" x="1015" y="1501" text-anchor="middle">onEnabled hook runs</text>
+          <text class="s" x="1015" y="1519" text-anchor="middle">“Setting up…” until it's done</text>
+
+          <line class="edge" x1="1015" y1="1532" x2="1015" y2="1560" marker-end="url(#ah)"/>
+          <rect class="box live" x="915" y="1562" width="200" height="52" rx="8"/>
+          <text class="t on-live" x="1015" y="1583" text-anchor="middle">On in that organization</text>
+          <text class="s on-live" x="1015" y="1601" text-anchor="middle">pages, menus, endpoints, events</text>
+        </svg>

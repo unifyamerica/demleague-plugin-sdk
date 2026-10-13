@@ -5,6 +5,10 @@ It contains types, decorators, abstract service classes, the Vue UI contract and
 implementations live in the API and the SPA (the hosts). That separation is what lets the SDK be published and
 plugins live in their own repos.
 
+**Building a plugin?** Start with the [Plugin Developer Guide](PLUGIN_DEVELOPER_GUIDE.md): how a plugin gets
+into production, the manifest, permissions, data, events, the UI, testing and releasing. The example plugin,
+[demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes), is the template.
+
 | Entry | For | Format |
 | --- | --- | --- |
 | `@unifyamerica/demleague-plugin-sdk` | The plugin's API part: everything below | CommonJS |
@@ -28,7 +32,7 @@ it), and the token stays out of the repo, in your user `~/.npmrc`:
 Then `npm install -D @unifyamerica/demleague-plugin-sdk` and list it in `peerDependencies` too. The package
 is public, but GitHub Packages still needs a token to install from it. Plugins are named
 `@unifyamerica/demleague-plugin-<vendor>-<module>` and live in a repo of the same name in the `unifyamerica`
-org (see the plugin developer guide, §16). The example plugin,
+org (see the [plugin developer guide](PLUGIN_DEVELOPER_GUIDE.md), §16). The example plugin,
 [demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes), is also the
 template for new ones.
 
