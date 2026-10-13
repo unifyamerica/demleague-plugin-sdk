@@ -257,5 +257,7 @@ read-only access; the second attests the tarball (SLSA build provenance) and run
 verifies the attestation. Verify a release yourself with
 `gh attestation verify <tarball> --repo unifyamerica/demleague-plugin-sdk`.
 
-To work on the SDK and DemLeagueOS together, `npm link` this repo into DemLeagueOS, and bump its pin there
-once the release is out.
+To try an unreleased change in DemLeagueOS (or in a plugin), run `npm pack` here and install the tarball
+there; bump the exact pin once the release is out. Avoid `npm link`: the linked clone resolves its peers
+(`@nestjs/common`, `class-validator`, Vue) from its own `node_modules`, so the host would see a second copy of
+them.
