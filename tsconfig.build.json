@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  // `src/vue` is browser-only, built by tsconfig.esm.json
+  "exclude": ["src/**/*.spec.ts", "src/vue", "dist", "node_modules"]
+}

@@ -1,0 +1,93 @@
+# Publishes @unifyamerica/demleague-plugin-sdk to GitHub Packages from a `v<version>` tag, with SLSA build
+# provenance. DemLeagueOS's contract check verifies it:
+#
+#   gh attestation verify <tarball> --repo unifyamerica/demleague-plugin-sdk \
+#     --signer-workflow unifyamerica/demleague-plugin-sdk/.github/workflows/release.yml --source-ref refs/tags/v<version>
+#
+# 1. build: checks, tests, build and `npm pack`, with read-only permissions
+# 2. publish: attests the tarball and publishes it, without running the package's own scripts
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: Check, build and pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: The tag is the package's version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG doesn't match package.json version $version"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run lint:check
+      - run: npm run type-check
+      - run: npm test
+      - run: npm run build
+      - name: Pack
+        id: pack
+        run: |
+          tarball=$(npm pack --json | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename)')
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Attest and publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@unifyamerica"
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ needs.build.outputs.tarball }}
+      - name: Publish to GitHub Packages
+        run: npm publish "./${{ needs.build.outputs.tarball }}" --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+      - name: Summary
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+          ATTESTATION: ${{ steps.attest.outputs.attestation-url }}
+        run: |
+          {
+            echo "### Published ${TARBALL%.tgz}"
+            echo ""
+            echo "- sha256: \`$(sha256sum "$TARBALL" | cut -d' ' -f1)\`"
+            echo "- Attestation: ${ATTESTATION}"
+          } >> "$GITHUB_STEP_SUMMARY"

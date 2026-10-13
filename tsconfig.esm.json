@@ -1,0 +1,17 @@
+{
+  // The browser entries (`./manifest`, `./vue`, `./vue/testing`) as ES modules for the SPA's bundler. Only these
+  // files and what they import are compiled, so nothing here may import NestJS.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2024", "DOM"],
+    "types": [],
+    "outDir": "./dist/esm",
+    "rootDir": "./src",
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": false
+  },
+  "include": ["src/manifest/index.ts", "src/vue/index.ts", "src/vue/testing.ts"],
+  "exclude": ["src/**/*.spec.ts"]
+}

@@ -1,0 +1,122 @@
+{
+  "name": "@unifyamerica/demleague-plugin-sdk",
+  "version": "0.1.0",
+  "description": "The only package a DemLeagueOS plugin may import from the platform: manifest types, decorators, host service contracts, the Vue UI contract and test harnesses",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unifyamerica/demleague-plugin-sdk.git"
+  },
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
+    "./manifest": {
+      "import": {
+        "types": "./dist/esm/manifest/index.d.ts",
+        "default": "./dist/esm/manifest/index.js"
+      },
+      "default": {
+        "types": "./dist/manifest/index.d.ts",
+        "default": "./dist/manifest/index.js"
+      }
+    },
+    "./vue": {
+      "types": "./dist/esm/vue/index.d.ts",
+      "default": "./dist/esm/vue/index.js"
+    },
+    "./vue/testing": {
+      "types": "./dist/esm/vue/testing.d.ts",
+      "default": "./dist/esm/vue/testing.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.spec.*"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node scripts/mark-esm.mjs",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "NODE_OPTIONS='--experimental-vm-modules --disable-warning=ExperimentalWarning' jest",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.esm.json",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:check": "eslint \"src/**/*.ts\""
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "@nestjs/testing": "^12.0.0",
+    "pinia": "^4.0.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0",
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "@nestjs/testing": {
+      "optional": true
+    },
+    "reflect-metadata": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
+    "pinia": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/testing": "^12.1.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.19.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "globals": "^17.13.0",
+    "jest": "^30.5.2",
+    "pinia": "^4.0.3",
+    "prettier": "^3.9.9",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ts-jest": "^29.4.14",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vue": "^3.5.43"
+  },
+  "jest": {
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "testEnvironment": "node",
+    "setupFiles": [
+      "reflect-metadata"
+    ]
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
