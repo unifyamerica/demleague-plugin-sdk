@@ -11,7 +11,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 [How a plugin gets into production](#3-how-a-plugin-gets-into-production), then use
 [the checklist](#17-submission-checklist) to follow progress.
 
-> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.1.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
+> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.2.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
 > PrimeVue 4.
 
 ---
@@ -56,7 +56,7 @@ organization, then installed into the platform through a pull request the core t
 | Where are its endpoints? | Under `/plugins/<vendor>/<module>`, e.g. `/plugins/acme/notes/notes`. |
 | Where are its pages? | Under `/apps/<vendor>/<module>` in the SPA, e.g. `/apps/acme/notes`. |
 | Where does its data live? | In its own MongoDB collections, which it can't share with other plugins and which are separate from core data. Records are isolated per organization by the host. |
-| Can it read users and organizations? | Yes, through read-only proxies, if the core team approves the permission. On a user's request, only what that user may see. |
+| Can it read users? | Only the current organization's members, through a proxy, if the core team approves the permission. On a user's request, only what that user may see. |
 | Who decides what it may do? | The vendor **declares** needs in the manifest. The core team **approves** them in the namespace registry. Both have to agree, or the API won't start. |
 | What stops it from using too much? | Request, database, storage and time limits, enforced by the host. |
 | What does the vendor have to deliver? | A module repository with unit tests, released by the org's release workflow from a version tag, plus the approvals it asks for. The core team opens the PR that installs it. |
@@ -65,7 +65,7 @@ organization, then installed into the platform through a pull request the core t
 
 - Expose REST endpoints that are authenticated (the default) or, once approved, public
 - Store and query its own documents
-- Read users and organizations, and update a user's profile name and timezone
+- Read the current organization's members, and update a member's profile name and timezone
 - Emit its own events and react to platform events and other plugins' events
 - Declare its own abilities (e.g. `read Note`), granted to organization roles once approved,
   and restrict endpoints and pages with them or with platform abilities
@@ -77,6 +77,7 @@ organization, then installed into the platform through a pull request the core t
 - Import core API code, reach the database directly, or inject core services
 - Import core SPA code, `vue-router`, Pinia directly, or an HTTP client in its UI
 - Read or write other plugins' data, or core collections
+- Reach any organization other than the current one (the request's tenant)
 - Read configuration from environment variables (there is no configuration API yet)
 - Register global guards, interceptors, filters or pipes, or import other Nest modules
 - Declare database indexes
@@ -531,7 +532,6 @@ Also enforced by `@PluginModule()`: there is no `imports` option, and providers 
 | `users:read` | `UsersProxy.findById` / `findByIds`: name, membership in the current organization | No email address. |
 | `users:read:email` | Also includes `email` in returned users | PII. Requires `users:read`. Reviewed strictly. |
 | `users:write` | `UsersProxy.updateProfile`: `firstName`, `lastName`, `timezone` | Nothing else can be changed. |
-| `organizations:read` | `OrganizationsProxy.findById` / `findByIds` | |
 | `data:read` | `find`, `findById`, `count` on your own collections | Scoped to the request's tenant (§10). |
 | `data:write` | `insert`, `update`, `remove` on your own collections | Scoped to the request's tenant (§10). |
 
@@ -583,25 +583,25 @@ import { RequireAbility } from '@unifyamerica/demleague-plugin-sdk';
 @RequireAbility('read', 'Note')              // one of the plugin's own subjects
 list(/* ... */) {}
 
-@Patch('settings')
-@RequireAbility('update', 'Organization')   // a platform subject, e.g. org admins
-updateSettings(/* ... */) {}
+@Get('overview')
+@RequireAbility('read', 'Overview')          // granted to org_admin only: an org-admin-only endpoint
+overview(/* ... */) {}
 ```
 
-- Actions: `manage`, `create`, `read`, `update`, `delete`. Subjects: the platform's `User` and
-  `Organization`, or one declared in `manifest.abilities`. Any other subject stops the API from starting.
+- Actions: `manage`, `create`, `read`, `update`, `delete`. Subjects: the platform's `User`, or one declared
+  in `manifest.abilities`. Any other subject stops the API from starting. For an org-admin-only feature,
+  declare your own subject and grant it to `org_admin`.
 - **Own subjects are checked in the request's tenant** (`X-Tenant`): a `member` grant only lets members of
   that organization through. Authenticated requests always have a tenant (400 without one), and the user's
   ability only holds their membership in it.
-- **Platform subjects are a type-level check**, against the user's ability in the request's tenant (“can this
-  user update the current organization?”, since that's the only one it holds). For details, use
-  `PluginContext.tenant()` and the actor's `memberships` (their membership in it).
+- **The platform subject is a type-level check**, against the user's ability in the request's tenant. For
+  the user's roles there, use the actor's `memberships` (their membership in it).
 - It can go on a handler or on a controller class.
 - On a public endpoint it always fails with 401, since there's no user.
 
-Platform roles for reference (there are no system-wide roles): organization `org_admin` (updates its
-organization, manages its members and settings, reads the installed plugins), active members (read their
-organization and its members), and everyone (reads and updates their own profile).
+Platform roles for reference (there are no system-wide roles): organization `org_admin` (manages its
+members and settings, reads the installed plugins), active members (read its members), and everyone (reads
+and updates their own profile).
 
 ---
 
@@ -664,9 +664,8 @@ if (!org) throw new BadRequestException('X-Tenant header is required');
 
 `tenant()` is the **current organization**, and your code can only ever reach that organization. That holds
 on a user's request, on a public endpoint and in an event handler (where it's the event's organization).
-The host confines your data (see [§10](#10-storing-data)), the users you can find (its active members, see
-[§9](#9-platform-services-proxies)) and the organizations you can find (only that one). There's no
-way to pick another organization. `@RequireAbility()` on your own subjects checks the user's roles in it.
+The host confines your data (see [§10](#10-storing-data)) and the users you can find (its active members,
+see [§9](#9-platform-services-proxies)). There's no way to pick or read another organization. `@RequireAbility()` on your own subjects checks the user's roles in it.
 Use `tenant()` when you need the organization's details, or to refuse requests without one.
 
 ---
@@ -682,11 +681,6 @@ abstract class UsersProxy {
   findByIds(ids: string[]): Promise<PluginUser[]>;              // at most 100 ids
   findMembers(query?: { limit?: number; skip?: number }): Promise<PluginPage<PluginUser>>; // the org's active members, by id; limit ≤ 100
   updateProfile(id: string, changes: PluginUserProfileUpdate): Promise<PluginUser>;
-}
-
-abstract class OrganizationsProxy {
-  findById(id: string): Promise<PluginOrganization | null>;
-  findByIds(ids: string[]): Promise<PluginOrganization[]>;      // at most 100 ids
 }
 
 abstract class DataProxy {
@@ -731,23 +725,25 @@ interface PluginUser {
   memberships: { organizationId: string; roles: string[] }[];   // only the current organization's
 }
 interface PluginUserProfileUpdate { firstName?: string; lastName?: string; timezone?: string | null }
-interface PluginOrganization { id: string; name: string; slug: string; description: string | null }
+interface PluginOrganization { id: string; name: string; slug: string; description: string | null } // what tenant() returns
 interface PluginActor {
   id: string;
   memberships: { organizationId: string; roles: string[] }[];   // only their active one in the current organization (≤ 1)
 }
 ```
 
-`UsersProxy` and `OrganizationsProxy` calls count as database operations (`dbOperationsPerMinute`).
-`findByIds` returns only the records found and accessible, so the result may be shorter than the input.
+`UsersProxy` calls count as database operations (`dbOperationsPerMinute`). `findByIds` returns only the
+records found and accessible, so the result may be shorter than the input.
 
-Both are **confined to the current organization** (`tenant()`), whoever acts:
+`UsersProxy` is **confined to the current organization** (`tenant()`), whoever acts:
 
-- `UsersProxy` only finds (and `updateProfile` only changes) the organization's active members, and a user's
+- It only finds (and `updateProfile` only changes) the organization's active members, and a user's
   `memberships` only lists that organization. Without a current organization, it only finds the acting user,
   or in an event handler the user a core event is about.
-- `OrganizationsProxy` only finds the current organization, and nothing without one.
 - On a user's request, the user's own rights apply on top.
+
+There's no organizations proxy: the current organization's details come from `tenant()`, and no other
+organization is reachable.
 
 ---
 
@@ -907,10 +903,10 @@ Handlers receive `PluginEvent { id, name, source, emittedAt, organizationId, pay
 neither). You only receive an organization's events while your module is turned on in it (§2).
 
 - Handlers run **asynchronously, without an acting user, in the event's organization**. `actor()` is `null`
-  and `createdBy` is `null` on records you insert. `tenant()` is the event's organization, and data, users and
-  organizations are confined to it like on a request (§9 Tenancy). For an event without an organization
-  (e.g. `core.user.created`), `tenant()` is `null`. You then only see records without an organization, only
-  the user a core event is about (`payload.userId`), and no organization.
+  and `createdBy` is `null` on records you insert. `tenant()` is the event's organization, and data and users
+  are confined to it like on a request (§8 Tenancy). For an event without an organization (e.g.
+  `core.user.created`), `tenant()` is `null`. You then only see records without an organization, only
+  the user a core event is about (`payload.userId`).
 - Events you emit from a handler happen in its organization too.
 - A payload can't name another organization: emitting one whose `organizationId` field isn't the current
   organization's id throws `PluginValidationError`, so you can't point subscribers at another organization.
@@ -1251,7 +1247,7 @@ beforeEach(async () => {
     actor: { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', memberships: [{ organizationId: 'o1', roles: ['member'] }] }, // default null
     tenant: { id: 'o1', name: 'Org', slug: 'org', description: null },          // X-Tenant, default null
     users: [{ id: 'u1', firstName: 'Ada', lastName: 'Lovelace', memberships: [] }],
-    organizations: [{ id: 'o1', name: 'Org', slug: 'org', description: null }],
+    organizations: [{ id: 'o1', name: 'Org', slug: 'org', description: null }], // what events.deliver() and lifecycle run in
     permissions: ['data:read'],      // optional: override the manifest's to test denials
   });
 });
@@ -1263,7 +1259,7 @@ afterEach(() => harness.close());
 | `harness.module.get(MyService)` | Your providers |
 | `harness.context.setActor(actor \| null)` | Switch user, or simulate a public request. Like the host, `actor()` only returns their membership in the current tenant (none without one) |
 | `harness.context.setTenant(org \| null)` | Simulate the `X-Tenant` header |
-| `harness.users.users` / `harness.organizations.organizations` | Backing `Map`s for fixtures |
+| `harness.users.users` | Backing `Map` for user fixtures |
 | `harness.data.store.get('notes')` | Raw records by collection, **including soft-deleted ones** (`isEnabled: false`) |
 | `harness.data.usage` | `{ documents, bytes }` counted against storage limits |
 | `await harness.events.deliver(name, payload, source?, organizationId?)` | Delivers an event like the host does (actor `null`, run in the event's organization: `organizationId` from a core payload, else the argument) and rejects with the first handler error. It doesn't check the module is turned on |
@@ -1603,7 +1599,7 @@ These come from the current in-process plugin model. They're listed so you can p
 | **SPA** | The DemLeagueOS web app, which bundles plugin UIs. |
 | **Slot** | A place in the SPA's menus where a plugin may add entries (`main-menu`, `profile-menu`). |
 | **Soft delete** | Records are hidden rather than erased, and stop counting towards quotas. |
-| **Subject** | A kind of thing abilities apply to: the platform's (`User`, `Organization`) or the plugin's own (`Note`). |
+| **Subject** | A kind of thing abilities apply to: the platform's (`User`) or the plugin's own (`Note`). |
 | **Tenant** | The organization a request acts in (the `X-Tenant` header). Plugin data is isolated per tenant. |
 | **Tier** | The registry's trust level: `first-party`, `verified` or `community`. |
 | **UI definition** | What a plugin's `./ui` entry default exports: `createPluginUi(manifest).define({...})`. |

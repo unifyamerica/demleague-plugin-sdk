@@ -16,7 +16,6 @@ import {
 import { DataProxy, PluginCollection } from '../services/data.proxy';
 import { EventBusProxy } from '../services/event-bus.proxy';
 import { ModuleLifecycleProxy } from '../services/module-lifecycle.proxy';
-import { OrganizationsProxy } from '../services/organizations.proxy';
 import { PluginContext } from '../services/plugin-context';
 import { PluginLogger } from '../services/plugin-logger';
 import { PluginMembersQuery, UsersProxy } from '../services/users.proxy';
@@ -217,41 +216,6 @@ export class InMemoryUsersProxy extends UsersProxy {
       ),
     );
     return this.toDto(user);
-  }
-}
-
-export class InMemoryOrganizationsProxy extends OrganizationsProxy {
-  readonly organizations = new Map<string, PluginOrganization>();
-
-  constructor(
-    private readonly context: TestPluginContext,
-    organizations: PluginOrganization[] = [],
-  ) {
-    super();
-    organizations.forEach((organization) =>
-      this.organizations.set(organization.id, structuredClone(organization)),
-    );
-  }
-
-  // Like the host: only the current organization
-  private visibleOrganization(id: string) {
-    return id === this.context.tenant()?.id
-      ? this.organizations.get(id)
-      : undefined;
-  }
-
-  async findById(id: string): Promise<PluginOrganization | null> {
-    this.context.assertPermission('organizations:read');
-    const organization = this.visibleOrganization(id);
-    return organization ? structuredClone(organization) : null;
-  }
-
-  async findByIds(ids: string[]): Promise<PluginOrganization[]> {
-    this.context.assertPermission('organizations:read');
-    return ids.flatMap((id) => {
-      const organization = this.visibleOrganization(id);
-      return organization ? [structuredClone(organization)] : [];
-    });
   }
 }
 
@@ -504,7 +468,7 @@ export class RecordingEventBusProxy extends EventBusProxy {
 
   constructor(
     private readonly context: TestPluginContext,
-    // The organizations `deliver()` runs handlers in (the harness's `organizations`)
+    // The organizations `deliver()` runs handlers in (the harness's `organizations` option)
     private readonly organizations: ReadonlyMap<
       string,
       PluginOrganization
@@ -548,7 +512,7 @@ export class RecordingEventBusProxy extends EventBusProxy {
 
   /**
    * Delivers an event to the plugin's handlers the way the host does: without an acting user, in the event's
-   * organization (the tenant; looked up in the harness's `organizations`), awaiting all handlers. Rejects with the
+   * organization (the tenant; looked up in the harness's `organizations` option), awaiting all handlers. Rejects with the
    * first handler error (the host logs it instead). The event's `organizationId` is a core event's
    * `payload.organizationId`, else `organizationId`. Unlike the host, it doesn't check the module is turned on in
    * that organization.
@@ -632,7 +596,7 @@ export class InMemoryModuleLifecycleProxy extends ModuleLifecycleProxy {
 
   constructor(
     private readonly context: TestPluginContext,
-    // The organizations `enable()` / `disable()` run hooks in (the harness's `organizations`)
+    // The organizations `enable()` / `disable()` run hooks in (the harness's `organizations` option)
     private readonly organizations: ReadonlyMap<
       string,
       PluginOrganization

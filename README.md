@@ -66,14 +66,12 @@ template for new ones.
 export class AcmeNotesPlugin {}
 ```
 
-Inject what you need (`UsersProxy`, `OrganizationsProxy`, `DataProxy`, `EventBusProxy`, `PluginContext`,
-`PluginLogger`) like any provider. Get the caller with `@CurrentActor()`, and the organization the request
+Inject what you need (`UsersProxy`, `DataProxy`, `EventBusProxy`, `PluginContext`, `PluginLogger`) like any provider. Get the caller with `@CurrentActor()`, and the organization the request
 acts in (the `X-Tenant` header) with `PluginContext.tenant()`. Authenticated endpoints always have one (the
 host answers 400 without it) and the host has already checked the caller is an active member of it; it can
 only be `null` on a public endpoint called without the header, or in a handler for an event about no
-organization. The actor's `memberships` only hold their membership in it. Require a
-platform permission on a route with `@RequireAbility('update', 'Organization')`, or one of your own with
-`@RequireAbility('read', 'Note')`. See `plugins/acme-notes` for a complete plugin.
+organization. The actor's `memberships` only hold their membership in it. Restrict a route
+with one of your own abilities, `@RequireAbility('read', 'Note')`. See `plugins/acme-notes` for a complete plugin.
 
 ### Abilities
 
@@ -97,8 +95,8 @@ without a user.
   (`organizationId: null` ones without one).
 - `UsersProxy` only reaches its active members. Without one: the acting user, or the user a core event is
   about.
-- `OrganizationsProxy` only finds it.
-- A plugin can't choose another organization, and an emitted payload can't name one.
+- A plugin can't choose or read another organization, and an emitted payload can't name one. There's no
+  organizations proxy: `tenant()` is the only organization it sees.
 
 ### Turned on per organization, with lifecycle hooks
 
