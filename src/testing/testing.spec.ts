@@ -262,9 +262,8 @@ describe('plugin test harness', () => {
     expect(await counters.count()).toBe(1);
   });
 
-  it('should confine users and organizations to the current organization', async () => {
+  it('should confine users to the current organization', async () => {
     const orgA = { id: 'org-a', name: 'A', slug: 'a', description: null };
-    const orgB = { id: 'org-b', name: 'B', slug: 'b', description: null };
     const user = (id: string, organizationIds: string[]) => ({
       id,
       firstName: id,
@@ -278,8 +277,7 @@ describe('plugin test harness', () => {
       actor: { id: 'u1', memberships: [] },
       tenant: orgA,
       users: [user('u1', ['org-a', 'org-b']), user('u2', ['org-b'])],
-      organizations: [orgA, orgB],
-      permissions: ['users:read', 'users:write', 'organizations:read'],
+      permissions: ['users:read', 'users:write'],
     });
 
     // Only Alpha's members, listing only their Alpha membership
@@ -292,18 +290,12 @@ describe('plugin test harness', () => {
     await expect(
       confined.users.updateProfile('u2', { firstName: 'X' }),
     ).rejects.toThrow();
-    expect(
-      (await confined.organizations.findByIds(['org-a', 'org-b'])).map(
-        (organization) => organization.id,
-      ),
-    ).toEqual(['org-a']);
 
-    // Without an organization: only the acting user, and no organization
+    // Without an organization: only the acting user
     confined.context.setTenant(null);
     expect(
       (await confined.users.findByIds(['u1', 'u2'])).map((found) => found.id),
     ).toEqual(['u1']);
-    expect(await confined.organizations.findById('org-a')).toBeNull();
     await confined.close();
   });
 

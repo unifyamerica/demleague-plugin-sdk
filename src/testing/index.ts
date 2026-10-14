@@ -5,7 +5,6 @@ import { getPluginDefinition } from '../decorators/plugin-module.decorator';
 import { DataProxy } from '../services/data.proxy';
 import { EventBusProxy } from '../services/event-bus.proxy';
 import { ModuleLifecycleProxy } from '../services/module-lifecycle.proxy';
-import { OrganizationsProxy } from '../services/organizations.proxy';
 import { PluginContext } from '../services/plugin-context';
 import { PluginLogger } from '../services/plugin-logger';
 import { UsersProxy } from '../services/users.proxy';
@@ -14,7 +13,6 @@ import { PluginPermission } from '../types/permissions';
 import {
   InMemoryDataProxy,
   InMemoryModuleLifecycleProxy,
-  InMemoryOrganizationsProxy,
   InMemoryUsersProxy,
   RecordingEventBusProxy,
   RecordingPluginLogger,
@@ -31,6 +29,7 @@ export interface PluginTestingOptions {
   // The organization the request acts in (its `X-Tenant`), `null` (the default) for none
   tenant?: PluginOrganization | null;
   users?: PluginUser[];
+  // The organizations `events.deliver()` and `lifecycle` run in, by id (a bare one for an id not listed)
   organizations?: PluginOrganization[];
   // Overrides the manifest's permissions, e.g. to test what happens without one
   permissions?: PluginPermission[];
@@ -40,7 +39,6 @@ export interface PluginTestHarness {
   module: TestingModule;
   context: TestPluginContext;
   users: InMemoryUsersProxy;
-  organizations: InMemoryOrganizationsProxy;
   data: InMemoryDataProxy;
   events: RecordingEventBusProxy;
   lifecycle: InMemoryModuleLifecycleProxy;
@@ -88,13 +86,6 @@ function testRuntimeModule(
         provide: UsersProxy,
         useValue: new InMemoryUsersProxy(context, options.users),
       },
-      {
-        provide: OrganizationsProxy,
-        useValue: new InMemoryOrganizationsProxy(
-          context,
-          options.organizations,
-        ),
-      },
       { provide: DataProxy, useValue: data },
       {
         provide: EventBusProxy,
@@ -113,7 +104,6 @@ function testRuntimeModule(
     exports: [
       PluginContext,
       UsersProxy,
-      OrganizationsProxy,
       DataProxy,
       EventBusProxy,
       ModuleLifecycleProxy,
@@ -155,7 +145,6 @@ export async function createPluginTestHarness(
     module,
     context: module.get(PluginContext) as TestPluginContext,
     users: module.get(UsersProxy) as InMemoryUsersProxy,
-    organizations: module.get(OrganizationsProxy) as InMemoryOrganizationsProxy,
     data: module.get(DataProxy) as InMemoryDataProxy,
     events: module.get(EventBusProxy) as RecordingEventBusProxy,
     lifecycle: module.get(ModuleLifecycleProxy) as InMemoryModuleLifecycleProxy,

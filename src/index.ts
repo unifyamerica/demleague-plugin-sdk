@@ -36,7 +36,6 @@ export type {
 
 export { UsersProxy } from './services/users.proxy';
 export type { PluginMembersQuery } from './services/users.proxy';
-export { OrganizationsProxy } from './services/organizations.proxy';
 export { DataProxy } from './services/data.proxy';
 export type { PluginCollection } from './services/data.proxy';
 export { EventBusProxy } from './services/event-bus.proxy';

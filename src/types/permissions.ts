@@ -7,7 +7,6 @@ export const PluginPermissions = {
   USERS_READ: 'users:read',
   USERS_READ_EMAIL: 'users:read:email',
   USERS_WRITE: 'users:write',
-  ORGANIZATIONS_READ: 'organizations:read',
   DATA_READ: 'data:read',
   DATA_WRITE: 'data:write',
 } as const;
@@ -21,7 +20,6 @@ export const PLUGIN_PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> =
     'users:read:email': 'Also read user email addresses (PII)',
     'users:write':
       'Update user profile fields (first name, last name, timezone)',
-    'organizations:read': 'Read organizations',
     'data:read': "Read the plugin's own namespaced collections",
     'data:write':
       "Create, update and delete in the plugin's own namespaced collections",
