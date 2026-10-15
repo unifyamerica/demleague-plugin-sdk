@@ -151,7 +151,9 @@ entry can also be a group of links, for sub-navigation: `{ labelKey, icon, child
 
 `define()` throws if the UI doesn't match the manifest: an ability on an undeclared subject, or a menu
 without its slot in `manifest.ui.slots`. A UI may only import `@unifyamerica/demleague-plugin-sdk/vue`, `vue`, `primevue`
-and `primeicons`, its own files and the manifest. Style it with Tailwind utility classes. Build it with Vite in
+and `primeicons`, its own files and the manifest. It may not include, create or inject iframes (nor
+`frame`, `object`, `embed`) or write raw HTML (`v-html`, `innerHTML`): lint and the install PR's check
+reject them, and the SPA's CSP (`frame-src 'none'`) blocks them. Style it with Tailwind utility classes. Build it with Vite in
 library mode, keeping those packages external (see `plugins/acme-notes/vite.config.mts`).
 
 ## Rules the host enforces
