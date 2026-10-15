@@ -76,6 +76,8 @@ organization, then installed into the platform through a pull request the core t
 
 - Import core API code, reach the database directly, or inject core services
 - Import core SPA code, `vue-router`, Pinia directly, or an HTTP client in its UI
+- Include, create or inject iframes (or `frame`, `object`, `embed`) in its UI, or write raw HTML
+  (`v-html`, `innerHTML`, `insertAdjacentHTML`, `document.write`)
 - Read or write other plugins' data, or core collections
 - Reach any organization other than the current one (the request's tenant)
 - Read configuration from environment variables (there is no configuration API yet)
@@ -452,6 +454,11 @@ The template's `eslint.config.mjs` enforces, for non-test files:
   own `src/ui` files and `../manifest`. Not Pinia, `vue-router`, `axios` or the plugin's server code.
 - no `process.env`
 - no `eval`, `Function` or `require`
+- UI code: no iframes (nor `frame`, `frameset`, `object`, `embed`) in templates, `<component is>`, `h()` or
+  `document.createElement()`, and no raw HTML: `v-html`, `innerHTML`, `outerHTML`, `srcdoc`,
+  `insertAdjacentHTML`, `createContextualFragment`, `setHTMLUnsafe`, `document.write`. The SPA's CSP
+  (`frame-src 'none'; object-src 'none'`) blocks iframes at runtime too, so obfuscating one doesn't help. To
+  show another site, link to it.
 
 Spec files are exempt (UI tests import `pinia`, `@vue/test-utils` and `vitest`). These rules are also
 checked in review. Plugins run inside the API process, and their UI inside the SPA, so these rules are part
@@ -1412,7 +1419,9 @@ Two GitHub Actions workflows run on the install PR:
        installed, and its tarball attested by `unifyamerica/demleague-plugin-sdk`'s own release workflow
        (`release.yml`) from its `v<version>` tag.
      - The template's lint guardrails hold for the code you **shipped** (`dist/`): only the allowed imports,
-       and no `process.env`, `eval` or `Function` constructor.
+       and no `process.env`, `eval` or `Function` constructor. In `dist/ui`, also no iframe (or frame,
+       object, embed) and no raw HTML (`innerHTML`, which is what `v-html` compiles to, `insertAdjacentHTML`,
+       `srcdoc`, `document.write`).
      - Its job summary shows what your manifest asks for next to what the registry approves.
   3. The boot gate (`api/src/plugins.config.spec.ts`): the same check the API runs at startup.
   4. The SPA's module tests, which load your `./ui` entry.
@@ -1468,6 +1477,7 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
 
 **Code**
 - [ ] Imports only from the allowed packages (server and UI); no `process.env`, `eval`, `require`, or `console`
+- [ ] The UI has no iframes, `frame`, `object` or `embed`, and writes no raw HTML (`v-html`, `innerHTML`, …)
 - [ ] Injects only SDK proxies and the plugin's own providers
 - [ ] Every body and query input uses a `class-validator` DTO with length and range bounds
 - [ ] Every user-facing endpoint is guarded with `@RequireAbility()` where not every user may use it
