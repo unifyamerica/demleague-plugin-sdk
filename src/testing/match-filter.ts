@@ -1,7 +1,7 @@
-import { FilterScalar, PluginFilter } from '../query/filter';
+import { FilterScalar, isDate, PluginFilter } from '../query/filter';
 
 const comparable = (value: unknown): unknown =>
-  value instanceof Date ? value.getTime() : value;
+  isDate(value) ? value.getTime() : value;
 
 const getPath = (record: Record<string, unknown>, path: string): unknown =>
   path
@@ -18,7 +18,7 @@ function matchesCondition(value: unknown, condition: unknown): boolean {
   if (
     condition === null ||
     typeof condition !== 'object' ||
-    condition instanceof Date
+    isDate(condition)
   ) {
     return Array.isArray(value)
       ? value.some((item) => comparable(item) === comparable(condition))

@@ -179,6 +179,29 @@ describe('plugin test harness', () => {
     ).toEqual(expect.objectContaining({ userId: 'u1', n: 2 }));
   });
 
+  it('should update and filter records holding dates and nested objects', async () => {
+    const counters = service.data.collection<{
+      at: Date;
+      meta: { tags: string[] };
+      n: number;
+    }>('counters');
+    const record = await counters.insert({
+      at: new Date('2027-01-01T00:00:00.000Z'),
+      meta: { tags: ['a'] },
+      n: 1,
+    });
+
+    // The stored copy (made by structuredClone, in another realm under Jest) must still pass the checks
+    const updated = await counters.update(record.id, { n: 2 });
+    expect(updated?.n).toBe(2);
+    expect(updated?.at.getTime()).toBe(Date.parse('2027-01-01T00:00:00.000Z'));
+    expect(
+      await counters.count({
+        at: { $gte: new Date('2026-12-31T00:00:00.000Z') },
+      }),
+    ).toBe(1);
+  });
+
   it('should enforce declared collections, the filter language and the document size', async () => {
     expect(() => service.data.collection('other')).toThrow(
       PluginUndeclaredCollectionError,
