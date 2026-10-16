@@ -82,6 +82,57 @@ export class PluginUndeclaredCollectionError extends PluginSdkError {
   }
 }
 
+// The plugin called another module's operation it didn't declare in `manifest.calls`
+export class PluginUndeclaredCallError extends PluginSdkError {
+  readonly code = 'PLUGIN_UNDECLARED_CALL';
+  readonly status = 500;
+
+  constructor(namespace: string, provider: string, operation: string) {
+    super(
+      `Plugin "${namespace}" did not declare that it calls "${provider}" → "${operation}" (manifest.calls)`,
+    );
+  }
+}
+
+// The called module isn't there right now: not installed, disabled in the registry, or not turned on in this
+// organization. Dependencies between modules are soft: callers handle this, e.g. by hiding what needs it.
+export class PluginCallUnavailableError extends PluginSdkError {
+  readonly code = 'PLUGIN_CALL_UNAVAILABLE';
+  readonly status = 503;
+
+  constructor(
+    readonly provider: string,
+    reason: string,
+  ) {
+    super(`Module "${provider}" is unavailable: ${reason}`);
+  }
+}
+
+// The called operation failed with something other than an SDK error (the details stay in the API's logs), or
+// timed out
+export class PluginCallFailedError extends PluginSdkError {
+  readonly code = 'PLUGIN_CALL_FAILED';
+  readonly status = 502;
+
+  constructor(
+    readonly provider: string,
+    operation: string,
+    reason = 'it failed',
+  ) {
+    super(`Call to "${provider}" → "${operation}" failed: ${reason}`);
+  }
+}
+
+// A chain of calls went deeper than MAX_CALL_DEPTH, or called back into a module already in the chain
+export class PluginCallDepthExceededError extends PluginSdkError {
+  readonly code = 'PLUGIN_CALL_DEPTH_EXCEEDED';
+  readonly status = 508;
+
+  constructor(chain: string[]) {
+    super(`Call chain not allowed: ${chain.join(' → ')}`);
+  }
+}
+
 export class PluginValidationError extends PluginSdkError {
   readonly code = 'PLUGIN_VALIDATION_ERROR';
   readonly status = 400;

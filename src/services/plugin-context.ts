@@ -12,4 +12,6 @@ export abstract class PluginContext {
   // endpoints the host has already checked the actor may act in it. Data, users and organizations are
   // confined to it (see the proxies).
   abstract tenant(): PluginOrganization | null;
+  // While one of the plugin's exported operations runs: the namespace of the module that called it, else null
+  abstract caller(): string | null;
 }

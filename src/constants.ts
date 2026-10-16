@@ -13,6 +13,8 @@ export const SDK_IDENTITY: unique symbol = Symbol(
 export const PLUGIN_DEFINITION_METADATA = 'demleague:plugin:definition';
 export const PLUGIN_REQUIRED_ABILITY_METADATA =
   'demleague:plugin:required-ability';
+export const PLUGIN_EXPORTED_OPERATION_METADATA =
+  'demleague:plugin:exported-operation';
 
 // Where the host puts the acting user (a `PluginActor`, never the raw user document) on the request
 export const PLUGIN_ACTOR_REQUEST_KEY = 'pluginActor';

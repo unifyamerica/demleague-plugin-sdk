@@ -6,6 +6,7 @@ export {
   SDK_IDENTITY,
   PLUGIN_DEFINITION_METADATA,
   PLUGIN_REQUIRED_ABILITY_METADATA,
+  PLUGIN_EXPORTED_OPERATION_METADATA,
   PLUGIN_ACTOR_REQUEST_KEY,
 } from './constants';
 
@@ -16,6 +17,7 @@ export * from './types/ui';
 export * from './types/events';
 export * from './types/dto';
 export * from './types/lifecycle';
+export * from './types/calls';
 
 export {
   PluginModule,
@@ -27,6 +29,11 @@ export type {
 } from './decorators/plugin-module.decorator';
 export { CurrentActor } from './decorators/current-actor.decorator';
 export { RequireAbility } from './decorators/require-ability.decorator';
+export {
+  ExportedOperation,
+  getExportedOperations,
+} from './decorators/exported-operation.decorator';
+export type { ExportedOperationMethod } from './decorators/exported-operation.decorator';
 export { CORE_ABILITY_SUBJECTS } from './decorators/require-ability.decorator';
 export type {
   RequiredAbility,
@@ -40,6 +47,7 @@ export { DataProxy } from './services/data.proxy';
 export type { PluginCollection } from './services/data.proxy';
 export { EventBusProxy } from './services/event-bus.proxy';
 export { ModuleLifecycleProxy } from './services/module-lifecycle.proxy';
+export { ModuleCallsProxy } from './services/module-calls.proxy';
 export { PluginContext } from './services/plugin-context';
 export { PluginLogger } from './services/plugin-logger';
 

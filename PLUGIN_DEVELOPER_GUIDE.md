@@ -4,14 +4,16 @@ How to build, test, publish and get approval for a third-party plugin (module) f
 
 This guide accompanies the example plugin `@unifyamerica/demleague-plugin-acme-notes`
 ([unifyamerica/demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes)), which
-is also the template for new plugins. The SDK lives in
+is also the template for new plugins, and its companion `@unifyamerica/demleague-plugin-acme-tasks`
+([unifyamerica/demleague-plugin-acme-tasks](https://github.com/unifyamerica/demleague-plugin-acme-tasks)), which
+shows one module calling another. The SDK lives in
 [unifyamerica/demleague-plugin-sdk](https://github.com/unifyamerica/demleague-plugin-sdk); both repositories are
 public. It is written for software engineers. Readers who plan or review plugin work, such as technical
 project managers, can start with [At a glance](#1-at-a-glance) and
 [How a plugin gets into production](#3-how-a-plugin-gets-into-production), then use
 [the checklist](#17-submission-checklist) to follow progress.
 
-> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.2.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
+> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.3.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
 > PrimeVue 4.
 
 ---
@@ -29,6 +31,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 9. [Platform services (proxies)](#9-platform-services-proxies)
 10. [Storing data](#10-storing-data)
 11. [Events](#11-events)
+    - 11a. [Calls between modules](#11a-calls-between-modules)
 12. [Building the UI](#12-building-the-ui)
 13. [Resource limits](#13-resource-limits)
 14. [Errors](#14-errors)
@@ -55,7 +58,8 @@ organization, then installed into the platform through a pull request the core t
 | What can it import from the platform? | Only `@unifyamerica/demleague-plugin-sdk`. Also `@nestjs/common`, `class-validator`, `class-transformer` and its own files. The UI: `@unifyamerica/demleague-plugin-sdk/vue`, `vue`, `primevue`, `primeicons`. |
 | Where are its endpoints? | Under `/plugins/<vendor>/<module>`, e.g. `/plugins/acme/notes/notes`. |
 | Where are its pages? | Under `/apps/<vendor>/<module>` in the SPA, e.g. `/apps/acme/notes`. |
-| Where does its data live? | In its own MongoDB collections, which it can't share with other plugins and which are separate from core data. Records are isolated per organization by the host. |
+| Where does its data live? | In its own MongoDB collections, which it can't share with other plugins and which are separate from core data. Records are isolated per organization by the host. Other modules reach it only through the operations it exports. |
+| Can it use another module? | Only by calling the operations that module exports to it, through the host, for the current user in the current organization, once the core team approves the connection. |
 | Can it read users? | Only the current organization's members, through a proxy, if the core team approves the permission. On a user's request, only what that user may see. |
 | Who decides what it may do? | The vendor **declares** needs in the manifest. The core team **approves** them in the namespace registry. Both have to agree, or the API won't start. |
 | What stops it from using too much? | Request, database, storage and time limits, enforced by the host. |
@@ -67,6 +71,7 @@ organization, then installed into the platform through a pull request the core t
 - Store and query its own documents
 - Read the current organization's members, and update a member's profile name and timezone
 - Emit its own events and react to platform events and other plugins' events
+- Export operations other modules may call, and call the operations other modules export to it
 - Declare its own abilities (e.g. `read Note`), granted to organization roles once approved,
   and restrict endpoints and pages with them or with platform abilities
 - Know which organization (tenant) a request acts in
@@ -78,7 +83,8 @@ organization, then installed into the platform through a pull request the core t
 - Import core SPA code, `vue-router`, Pinia directly, or an HTTP client in its UI
 - Include, create or inject iframes (or `frame`, `object`, `embed`) in its UI, or write raw HTML
   (`v-html`, `innerHTML`, `insertAdjacentHTML`, `document.write`)
-- Read or write other plugins' data, or core collections
+- Import another plugin's package, inject its providers, or read or write its data other than through the
+  operations it exports; read or write core collections
 - Reach any organization other than the current one (the request's tenant)
 - Read configuration from environment variables (there is no configuration API yet)
 - Register global guards, interceptors, filters or pipes, or import other Nest modules
@@ -99,12 +105,12 @@ plugin's events (`acme.notes.*`). The core team registers it to your package. Ve
 `auth`, `api` and `admin` are reserved.
 
 **Manifest.** A plain object that declares everything the plugin needs: permissions, endpoints, collections,
-events, limits, abilities and UI slots. It is the plugin's side of the contract and is checked when the code
+events, limits, abilities, UI slots, the operations it exports and the other modules' operations it calls. It is the plugin's side of the contract and is checked when the code
 loads and again when the API starts. Both the server code and the UI import it.
 
 **Namespace registry.** `api/namespace-registry.json` in the DemLeagueOS repo, owned by the core team
 through CODEOWNERS. It records which package owns each namespace, the approved permissions, public
-endpoints, ability grants and UI slots, limit ceilings, the trust tier (`first-party`, `verified` or
+endpoints, ability grants, UI slots and calls to other modules (`approvedCalls`), limit ceilings, the trust tier (`first-party`, `verified` or
 `community`) and an `enabled` kill switch.
 
 **Abilities.** The plugin's own CASL subjects (`Note`) and which organization roles get which actions on them
@@ -114,10 +120,15 @@ and page/menu checks in the SPA test the same thing. Organization role grants ap
 **UI slots.** Places in the SPA's own chrome where a plugin may add entries: `main-menu` and `profile-menu`.
 Pages need no slot.
 
+**Exported operation / module call.** A named operation a module offers other modules (`manifest.exports`,
+implemented with `@ExportedOperation()`), and a call to it from another module (`ModuleCallsProxy.call()`).
+The call runs in the providing module, for the same user in the same organization (see
+[§11a](#11a-calls-between-modules)).
+
 **Host.** The DemLeagueOS API. It loads plugins, mounts their routes, runs authentication and quotas, and
 provides the real implementations of the SDK's services.
 
-**Proxies.** Abstract classes from the SDK (`UsersProxy`, `DataProxy`, ...) that a plugin injects. The host
+**Proxies.** Abstract classes from the SDK (`UsersProxy`, `DataProxy`, `ModuleCallsProxy`, ...) that a plugin injects. The host
 provides implementations that check permissions, meter usage and validate input on every call.
 
 **Actor.** The authenticated user making the current request (`PluginActor`). It is `null` on public
@@ -360,6 +371,7 @@ src/
     <feature>.controller.ts
     <feature>.service.ts
     <feature>.service.spec.ts
+    <feature>.exports.ts       @ExportedOperation() methods other modules call (optional, see §11a)
     <feature>.interface.ts     stored document shape, event names
     dto/*.dto.ts               class-validator DTOs
   listeners/
@@ -404,7 +416,7 @@ vitest.config.mts              runs src/ui/**/*.spec.ts
     "lint": "eslint \"src/**/*.{ts,vue}\""
   },
   "peerDependencies": {                     // NEVER regular dependencies
-    "@unifyamerica/demleague-plugin-sdk": "^0.1.0",
+    "@unifyamerica/demleague-plugin-sdk": "^0.3.0",
     "@nestjs/common": "^12.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.0",
@@ -482,6 +494,14 @@ interface PluginManifest {
   limits?: PluginResourceLimits;      // see §13
   abilities?: PluginAbilities;        // see §7
   ui?: { slots?: PluginUiSlot[] };    // 'main-menu' | 'profile-menu', see §12
+  exports?: Record<string, PluginExportDeclaration>; // operation → declaration, see §11a
+  calls?: Record<string, { operations: string[] }>;  // provider namespace → operations, see §11a
+}
+
+interface PluginExportDeclaration {
+  summary?: string;
+  ability?: { action: PluginAbilityAction; subject: string }; // one of your own subjects; omitted = any member
+  consumers: string[] | '*';          // namespaces that may call it, or any module the core team approves
 }
 
 // Subject → which organization roles get which actions on it (grants are per organization only)
@@ -518,6 +538,8 @@ problem at once.
 | `limits` | Only known limit names, each a positive integer. |
 | `abilities` | Subjects are PascalCase (`^[A-Z][A-Za-z0-9]{0,40}$`) and not a platform subject (`all`, `User`, `Organization`, `Plugin`). Only the `organization` scope (there are no system grants), known roles (`member`, `org_admin`), known actions without duplicates. |
 | `ui.slots` | Known slots (`main-menu`, `profile-menu`), without duplicates. |
+| `exports` | Operation names are lowercase kebab-case segments separated by dots (`notes.list`). Only the fields `summary`, `ability`, `consumers`. `ability` has a known action and a subject declared in `abilities`. `consumers` is `'*'` or a non-empty array of namespaces, not your own, without duplicates. |
+| `calls` | Keys are namespaces other than your own; each has a non-empty `operations` array of operation names, without duplicates. |
 
 Also enforced by `@PluginModule()`: there is no `imports` option, and providers may not use `APP_GUARD`,
 `APP_INTERCEPTOR`, `APP_FILTER` or `APP_PIPE`.
@@ -706,11 +728,16 @@ abstract class ModuleLifecycleProxy {                            // see §11, Li
   onUpgraded(handler: (event: ModuleLifecycleEvent) => void | Promise<void>): void;
 }
 
+abstract class ModuleCallsProxy {                                // see §11a
+  call<TResult = JsonValue>(namespace: string, operation: string, input?: JsonValue): Promise<TResult>;
+}
+
 abstract class PluginContext {
   readonly namespace: string;
   readonly manifest: Readonly<PluginManifest>;
   actor(): PluginActor | null;
   tenant(): PluginOrganization | null;
+  caller(): string | null;            // while one of your exported operations runs: the calling namespace
 }
 
 abstract class PluginLogger {                                    // use instead of console
@@ -998,6 +1025,181 @@ interface ModuleLifecycleEvent {
 
 ---
 
+## 11a. Calls between modules
+
+A module can't import another module's package, inject its providers or read its collections. When it needs
+another module's data or behaviour **on behalf of the current user**, it calls an operation that module
+**exports**, through the host. Use events for "something happened, react if you care" (asynchronous, no user,
+no answer); use a call for "do this / give me that, now, for this user" (synchronous, with a result).
+
+The example pair: [demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes)
+(`acme.notes`) exports `notes.list` and `notes.create`;
+[demleague-plugin-acme-tasks](https://github.com/unifyamerica/demleague-plugin-acme-tasks) (`acme.tasks`) calls
+them to show the user's latest notes next to their tasks and to keep a note about a task.
+
+### Three consents per connection
+
+| Who | Where | Says |
+| --- | --- | --- |
+| The provider's vendor | provider's `manifest.exports` | "I offer `notes.list` to `acme.tasks` (or to any approved module), for users holding `read Note`" |
+| The caller's vendor | caller's `manifest.calls` | "I call `acme.notes` → `notes.list`" |
+| The core team | `approvedCalls` in the **caller's** registry entry | "This connection is approved" (by operation name, never a wildcard) |
+
+All three must agree or the API doesn't start, except that a provider that isn't installed (or is disabled) is
+only a startup warning: dependencies between modules are **soft**.
+
+### Exporting operations (provider)
+
+Declare each operation in `manifest.exports`, then implement it with `@ExportedOperation()` on a method of a
+**class provider** listed in `providers` (the host can't read `useValue` / `useFactory` providers). Each
+exported operation needs exactly one method, and each such method must be exported.
+
+```ts
+// src/manifest.ts
+exports: {
+  'notes.list': {
+    summary: "The acting user's latest notes, pinned first",
+    ability: { action: 'read', subject: 'Note' },   // one of your own subjects; omitted = any member
+    consumers: '*',                                 // any module the core team approves a connection for
+  },
+  'notes.create': {
+    ability: { action: 'create', subject: 'Note' },
+    consumers: ['acme.tasks'],                      // only these namespaces
+  },
+},
+```
+
+```ts
+// src/notes/notes.exports.ts
+@Injectable()
+export class NotesExports {
+  constructor(private readonly notes: NotesService, private readonly context: PluginContext) {}
+
+  @ExportedOperation('notes.list')
+  async list(input: { limit?: number } | null, call: PluginCallInfo): Promise<NoteSummary[]> {
+    const limit = input?.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      throw new PluginValidationError('limit must be an integer from 1 to 50');
+    }
+    const { items } = await this.notes.list(this.context.actor()!, { limit });
+    return items.map((note) => ({ id: note.id, title: note.title, pinned: note.pinned,
+      updatedAt: note.updatedAt.toISOString() }));
+  }
+}
+```
+
+- **It runs as you.** Your own proxies, permissions, collections and quotas apply, for the caller's acting
+  user (`PluginContext.actor()`, never `null` here) in the caller's organization (`tenant()`). Records you
+  write get `createdBy` = that user. `PluginContext.caller()` (and `call.caller`) is the calling namespace.
+- **The `ability` is your gate.** The host checks it for the acting user, in the organization, against your
+  approved grants, exactly like `@RequireAbility()`. Give each export the ability its matching endpoint has: a
+  call must never let a user do more than your own endpoints would. Different rules for different callers?
+  Export two operations.
+- **Validate the input yourself.** It's plain JSON from another module, not a request body: no
+  `ValidationPipe` runs. Check it (or `plainToInstance` + `validate()` with your DTO) and throw
+  `PluginValidationError`. The input is `null` when the caller passed none.
+- **Return plain JSON** (strings, numbers, booleans, `null`, arrays, plain objects; dates as ISO strings), at
+  most 256 KB. Return only what callers need: the result leaves your module.
+- **Errors.** SDK errors you throw (`PluginValidationError`, `PluginActorForbiddenError`, …) reach the caller as
+  they are. Anything else, and a result that isn't plain JSON, becomes `PluginCallFailedError` for the caller,
+  with the details in the API logs.
+- **Limits.** Calls to your exports count against your `callsPerMinute` and run within your
+  `requestTimeoutMs`; the database work they do counts against your `dbOperationsPerMinute`.
+- **Exports are a public API.** Removing an export, narrowing its `consumers` or changing its input or result
+  shape breaks the modules that call it (the API refuses to start, or they get errors). Add a new operation
+  (`notes.list-recent`) instead of changing one in place, and document each operation's input and result in
+  your README.
+
+### Calling another module (caller)
+
+Declare what you call in `manifest.calls`, ask the core team to approve it (`approvedCalls`), and call it
+through `ModuleCallsProxy`:
+
+```ts
+// src/manifest.ts
+calls: { 'acme.notes': { operations: ['notes.list', 'notes.create'] } },
+```
+
+```ts
+// What notes.list returns. Declared here: you can't import another plugin's package (types included).
+interface NoteSummary { id: string; title: string; pinned: boolean; updatedAt: string }
+
+@Injectable()
+export class TasksService {
+  constructor(private readonly modules: ModuleCallsProxy) {}
+
+  async recentNotes(): Promise<{ available: boolean; notes: NoteSummary[] }> {
+    try {
+      const notes = await this.modules.call<NoteSummary[]>('acme.notes', 'notes.list', { limit: 5 });
+      return { available: true, notes };
+    } catch (error) {
+      // Notes isn't installed or turned on here, or this user may not read notes: degrade
+      if (error instanceof PluginCallUnavailableError || error instanceof PluginActorForbiddenError) {
+        return { available: false, notes: [] };
+      }
+      throw error;
+    }
+  }
+}
+```
+
+- **Only with an acting user, in an organization.** Calls work from authenticated endpoints, for the request's
+  user and tenant. Public endpoints, event handlers and lifecycle hooks can't make calls yet
+  (`PluginActorForbiddenError`).
+- **Plan for the provider being away.** It may not be installed, or not turned on in this organization:
+  `PluginCallUnavailableError` (503 `PLUGIN_CALL_UNAVAILABLE` if you let it propagate). Hide or disable what
+  needs it (acme.tasks returns `available: false` and its page hides the notes parts), or let a deliberate
+  action fail with that error.
+- **The user may not be allowed.** If they lack the export's ability, you get `PluginActorForbiddenError`.
+- **Copies only.** Your input is copied before the provider sees it, and you get a copy of the result.
+- **No loops.** A chain of calls can't come back into a module already in it (A → B → A), and goes at most
+  `MAX_CALL_DEPTH` (3) calls deep: `PluginCallDepthExceededError`.
+- **Your UI** never calls another plugin's endpoints: `useApi()` only reaches your own. Add an endpoint that
+  makes the call, as acme.tasks does with `GET /notes`.
+
+### What the host checks
+
+At startup (the API refuses to start otherwise):
+
+- your exports match your `@ExportedOperation()` methods exactly, each implemented once
+- each export's `ability.subject` is declared in your `abilities` (also checked by `validateManifest()`)
+- each operation in your `calls` is in your registry entry's `approvedCalls`
+- each operation you call is exported by the provider **to you** (`consumers` lists your namespace, or `'*'`)
+- a provider that isn't loaded is a warning, not an error
+
+On every call, in this order: the call is declared, there's an acting user and a tenant, the provider is
+loaded and turned on in the tenant, the call chain is allowed, the input is plain JSON within the size limit,
+the provider's `callsPerMinute` isn't exhausted, and the acting user holds the export's `ability` in the tenant.
+Then the operation runs as the provider, bounded by its `requestTimeoutMs`.
+
+### Testing calls
+
+On the **caller** side, other modules are stubs; an operation without a stub behaves like a module that isn't
+installed, so the "unavailable" path needs no setup:
+
+```ts
+harness.calls.stub('acme.notes', 'notes.list', (input, { actor, tenant }) => [
+  { id: 'n1', title: 'Groceries', pinned: true, updatedAt: '2026-01-01T00:00:00.000Z' },
+]);
+await expect(service.recentNotes()).resolves.toEqual({ available: true, notes: [expect.anything()] });
+expect(harness.calls.calls).toEqual([{ namespace: 'acme.notes', operation: 'notes.list', input: { limit: 5 } }]);
+harness.calls.unstub('acme.notes');   // unavailable again
+```
+
+On the **provider** side, run your exports the way the host does: `invokeExport()` checks the export's
+`consumers` and the actor's ability against your manifest's grants, copies input and result, sets
+`PluginContext.caller()`, and wraps non-SDK errors:
+
+```ts
+const harness = await createPluginTestHarness(AcmeNotesPlugin, { actor: member, tenant: org });
+await harness.invokeExport('notes.list', { limit: 5 }, { caller: 'acme.tasks' });
+```
+
+Test both sides of each connection you own: the happy path, input validation, the ability denial, and (as a
+caller) the provider being unavailable.
+
+---
+
 ## 12. Building the UI
 
 A plugin may ship a Vue 3 UI for the SPA: pages, menu entries, stores and translations, styled with Tailwind
@@ -1198,6 +1400,7 @@ Declare what your plugin needs in `manifest.limits`. Each effective limit is
 | `maxDocumentBytes` | 64 KB | 1 MB | Per document, 413 |
 | `maxDocuments` | 10,000 | 1,000,000 | Live documents across all your collections, 507 `PLUGIN_STORAGE_QUOTA_EXCEEDED` |
 | `maxStorageBytes` | 50 MB | 5 GB | Live bytes across all your collections, 507 |
+| `callsPerMinute` | 600 | 6,000 | Calls other modules make to your exported operations, 429 `PLUGIN_QUOTA_EXCEEDED` for the caller |
 | `maxMemoryMb` | 128 | 512 | Advisory only |
 
 **For planning:** size `maxDocuments` and `maxStorageBytes` from expected users × records per user ×
@@ -1222,6 +1425,14 @@ turns it into a JSON:API error response. You usually don't need to catch them.
 | `PluginUndeclaredCollectionError` | 500 | `PLUGIN_UNDECLARED_COLLECTION` | Collection not in the manifest |
 | `PluginUndeclaredEventError` | 500 | `PLUGIN_UNDECLARED_EVENT` | Event not in `emits` / `subscribes` |
 | `PluginManifestError` | 500 | `PLUGIN_MANIFEST_INVALID` | Invalid manifest (at load time) |
+| `PluginUndeclaredCallError` | 500 | `PLUGIN_UNDECLARED_CALL` | Called an operation that isn't in `manifest.calls` |
+| `PluginCallUnavailableError` | 503 | `PLUGIN_CALL_UNAVAILABLE` | The called module isn't installed, is disabled, or isn't turned on in this organization (`provider` names it) |
+| `PluginCallFailedError` | 502 | `PLUGIN_CALL_FAILED` | The called operation failed with a non-SDK error, returned something that isn't plain JSON, or timed out |
+| `PluginCallDepthExceededError` | 508 | `PLUGIN_CALL_DEPTH_EXCEEDED` | A call chain loops back into a module or goes more than 3 calls deep |
+
+On a module call, `PluginActorForbiddenError` also means there's no acting user (public endpoint, event handler,
+lifecycle hook) or the user lacks the export's ability, and `PluginValidationError` / `PluginPayloadTooLargeError`
+an input that isn't plain JSON or is over 256 KB. Other SDK errors the provider throws reach you unchanged.
 
 Response body shape:
 
@@ -1277,12 +1488,15 @@ afterEach(() => harness.close());
 | `harness.events.emitted` | Events your plugin emitted |
 | `harness.events.subscribedEvents()` | Event names your plugin subscribed to |
 | `harness.logger.messages` | `{ level, message }[]` |
+| `harness.calls.stub(namespace, operation, (input, { actor, tenant }) => result)` | What another module's operation does in this test (§11a). Without a stub, a call fails with `PluginCallUnavailableError` |
+| `harness.calls.calls` / `harness.calls.unstub(namespace)` | The calls your code made (`{ namespace, operation, input }`) / make a module unavailable again |
+| `await harness.invokeExport(operation, input, { caller })` | Runs one of your exported operations like the host does when `caller` calls it: checks `consumers` and the actor's ability from your grants, copies input and result, sets `PluginContext.caller()`. Needs an actor and a tenant |
 
 Use `createPluginTestingModule(Plugin, options)` instead when you need `.overrideProvider()` before
 compiling.
 
 **What the harness doesn't reproduce:** the acting user's own platform permissions, `@RequireAbility()`, rate
-limits and registry approvals and ceilings. Those are host-only, so cover those paths in review or end-to-end
+limits, registry approvals and ceilings, and (behind a stub) the other module's own rules. Those are host-only, so cover those paths in review or end-to-end
 tests against a local DemLeagueOS.
 
 **Minimum test set expected in review:**
@@ -1294,6 +1508,8 @@ tests against a local DemLeagueOS.
 - each event listener via `harness.events.deliver`, including the "record not found" path and the
   organization each record lands in
 - emitted events (`harness.events.emitted`)
+- each exported operation via `harness.invokeExport`: the happy path, input validation and the ability denial
+- each call to another module with `harness.calls.stub`, including the provider being unavailable
 - if there's a UI: the UI definition is valid (importing `src/ui/index.ts` runs `define()`), and each page's
   main paths, including what it hides without an ability and without an organization
 
@@ -1373,7 +1589,7 @@ workflow built and attested.
    Only the second job can sign, so your build and test scripts never get the identity that attests a
    package, and can't get arbitrary files attested.
 4. **Ask the core team to install it**, with the registry request (permissions, public endpoints, ability
-   grants, UI slots, raised limits and why). You have no access to DemLeagueOS: the core team opens the
+   grants, UI slots, calls to other modules, raised limits and why). You have no access to DemLeagueOS: the core team opens the
    install PR, which:
    - pins the **exact** version in `api/package.json` (no `^` or `~`)
    - adds `{ package: '@unifyamerica/demleague-plugin-<vendor>-<module>', module: <YourPluginClass> }` to
@@ -1394,6 +1610,7 @@ workflow built and attested.
     "Task": { "organization": { "member": ["read", "create"] } }
   },
   "approvedUiSlots": ["main-menu"],
+  "approvedCalls": { "acme.notes": ["notes.list"] },
   "limits": { "maxDocuments": 50000 },
   "notes": "Why the plugin exists, and why it needs each permission"
 }
@@ -1422,7 +1639,8 @@ Two GitHub Actions workflows run on the install PR:
        and no `process.env`, `eval` or `Function` constructor. In `dist/ui`, also no iframe (or frame,
        object, embed) and no raw HTML (`innerHTML`, which is what `v-html` compiles to, `insertAdjacentHTML`,
        `srcdoc`, `document.write`).
-     - Its job summary shows what your manifest asks for next to what the registry approves.
+     - Its job summary shows what your manifest asks for next to what the registry approves, including the
+       calls you make next to your `approvedCalls` and the operations you export.
   3. The boot gate (`api/src/plugins.config.spec.ts`): the same check the API runs at startup.
   4. The SPA's module tests, which load your `./ui` entry.
 - **CI** (`.github/workflows/ci.yml`): lint, type-check, unit tests (the boot gate included), the API's
@@ -1436,7 +1654,9 @@ The core team owns the registry file. They set `tier` and the limit ceilings, an
 Explain each permission, public endpoint, ability grant, UI slot and raised limit in your request; the core
 team carries it into the PR description.
 `approvedAbilityGrants` has the manifest's `abilities` shape and must cover every grant (an approved `manage`
-covers any action). Subjects with no grants (`{}`) need no entry.
+covers any action). Subjects with no grants (`{}`) need no entry. `approvedCalls` lists, per provider
+namespace, the operations you may call, by name; exporting operations needs no registry entry (the callers'
+approvals cover each connection), but say in your request which modules you export to and why.
 
 ### Setting up a module repo (core team)
 
@@ -1474,11 +1694,16 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
 - [ ] An `onUpgraded` migration keeps both record shapes working while it runs (the module stays on)
 - [ ] Ability grants are the fewest that work, and each is justified; org-admin-only features grant `org_admin` on their own subject
 - [ ] UI slots are declared only for menus the UI uses
+- [ ] Each exported operation has the ability its matching endpoint has, the narrowest `consumers` that work,
+      validates its input and returns only plain JSON callers need; its input and result are documented
+- [ ] Each call to another module is declared, requested in `approvedCalls`, and the caller works (or fails
+      clearly) when that module is unavailable
 
 **Code**
 - [ ] Imports only from the allowed packages (server and UI); no `process.env`, `eval`, `require`, or `console`
 - [ ] The UI has no iframes, `frame`, `object` or `embed`, and writes no raw HTML (`v-html`, `innerHTML`, …)
 - [ ] Injects only SDK proxies and the plugin's own providers
+- [ ] Never imports another plugin's package (types included): result shapes of called operations are declared locally
 - [ ] Every body and query input uses a `class-validator` DTO with length and range bounds
 - [ ] Every user-facing endpoint is guarded with `@RequireAbility()` where not every user may use it
 - [ ] Private data is scoped by owner; tenant scoping is left to the host
@@ -1538,6 +1763,12 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
 | `E401` / `E403` / `E404` from `npm.pkg.github.com` | No token in your user `~/.npmrc`, a token without `read:packages` (or a fine-grained token, which GitHub Packages' npm registry doesn't accept), or no read access to a private package (in CI: the package doesn't grant the repo access) | Add a classic token with `read:packages`; for a private package, ask the core team for access (Manage Actions access, or `PLUGINS_READ_TOKEN`). |
 | Plugin contract: `no valid attestation from the release workflow` | Published outside the release workflow (by hand, another workflow, a self-hosted runner), from a tag other than `v<version>`, or from a repo not named like the package | Release again by pushing a `v<version>` tag of `unifyamerica/demleague-plugin-<vendor>-<module>`, with a new version. |
 | Plugin contract: `the registry's tarball doesn't match package-lock.json's integrity` | The lockfile was resolved against another tarball | Reinstall the exact version so `package-lock.json` matches GitHub Packages. |
+| API refuses to start: `call acme.notes → notes.list is not in approvedCalls` | Calls not approved yet | Request the connection in your registry entry (`approvedCalls`). |
+| API refuses to start: `calls acme.notes → notes.list, which acme.notes doesn't export (to <you>)` | The provider doesn't export the operation, or not to your namespace | Ask the provider's vendor to export it to you (or to `'*'`), or stop calling it. |
+| API refuses to start: `exported operation "x" is not implemented` / `@ExportedOperation('x') ... is not declared` | `manifest.exports` and the `@ExportedOperation()` methods differ | Make them match; the method must be on a class provider listed in `providers`. |
+| 503 `PLUGIN_CALL_UNAVAILABLE` | The called module isn't installed or isn't turned on in this organization | Expected: dependencies are soft. Catch `PluginCallUnavailableError` and degrade. |
+| 403 `PLUGIN_ACTOR_FORBIDDEN` from a module call | No acting user (public endpoint, event handler, lifecycle hook), or the user lacks the export's ability | Call from authenticated endpoints only; check the provider's grants. |
+| 502 `PLUGIN_CALL_FAILED` | The provider's operation threw a non-SDK error, returned a non-JSON value (e.g. a `Date`), or timed out | Check the API logs (`[plugin:<provider>] <operation> called by <you> failed`). |
 | Event handler never fires in a test | Subscription not in `onModuleInit`, or listener not in `providers` | Register it in `providers`, and subscribe in `onModuleInit`. |
 
 ---
@@ -1564,6 +1795,10 @@ These come from the current in-process plugin model. They're listed so you can p
 - **The UI is bundled at build time.** There's no runtime or remote loading: installing or updating a UI
   ships with the next SPA build.
 - **Two UI slots** (`main-menu`, `profile-menu`). Ask the core team for more.
+- **Module calls** need an acting user (none from public endpoints, event handlers or lifecycle hooks yet), and
+  dependencies are soft: nothing stops an organization from turning off a module others call. A timed-out call
+  fails for the caller, but the provider's code keeps running. There are no typed operation contracts: callers
+  declare the result shapes themselves.
 - **Ability grants are per organization role** (`member`, `org_admin`); there are no system-wide roles. There are
   no per-record conditions beyond the organization: check ownership in your code.
 
@@ -1578,8 +1813,8 @@ These come from the current in-process plugin model. They're listed so you can p
   `gh attestation verify <tgz> --repo unifyamerica/demleague-plugin-sdk`). DemLeagueOS pins it exactly, like a
   plugin.
   - **Patch:** fixes, better error messages.
-  - **Minor:** new proxy methods, new core events, new optional manifest fields (as `abilities` and `ui`
-    were), new grantable organization roles.
+  - **Minor:** new proxy methods, new core events, new optional manifest fields (as `abilities`, `ui`,
+    `exports` and `calls` were), new grantable organization roles.
   - **Major:** removed or renamed methods, changed DTO shapes, new required manifest fields. Ships with a
     migration guide and a deprecation window.
 - `SDK_API_VERSION` is bumped only on breaking changes. The host refuses plugins built against another API
@@ -1598,8 +1833,10 @@ These come from the current in-process plugin model. They're listed so you can p
 | **Actor** | The authenticated user behind a request (`PluginActor`). `null` for public endpoints and events. |
 | **Ceiling** | The core-team-approved maximum for a limit, in the registry. |
 | **Collection** | A named store of documents owned by one plugin. |
+| **Exported operation** | A named operation a module offers other modules (`manifest.exports`, `@ExportedOperation()`), with the ability its caller's user needs and the modules that may call it. |
 | **Host** | The DemLeagueOS API, which loads and polices plugins. |
 | **Manifest** | The plugin's declaration of what it needs. |
+| **Module call** | One module calling another's exported operation through `ModuleCallsProxy`, for the current user in the current organization. Approved per connection in the caller's `approvedCalls`. |
 | **Module repo** | `unifyamerica/demleague-plugin-<vendor>-<module>`: one plugin's repository, where its vendor is an outside collaborator. |
 | **Namespace** | `<vendor>.<module>`, the plugin's identity. |
 | **Peer dependency** | A package the plugin uses but the host provides, so there's one shared copy. |

@@ -3,12 +3,14 @@ import { Test, TestingModule, TestingModuleBuilder } from '@nestjs/testing';
 import { SDK_IDENTITY } from '../constants';
 import { getPluginDefinition } from '../decorators/plugin-module.decorator';
 import { DataProxy } from '../services/data.proxy';
+import { ModuleCallsProxy } from '../services/module-calls.proxy';
 import { EventBusProxy } from '../services/event-bus.proxy';
 import { ModuleLifecycleProxy } from '../services/module-lifecycle.proxy';
 import { PluginContext } from '../services/plugin-context';
 import { PluginLogger } from '../services/plugin-logger';
 import { UsersProxy } from '../services/users.proxy';
 import { PluginActor, PluginOrganization, PluginUser } from '../types/dto';
+import { JsonValue } from '../types/events';
 import { PluginPermission } from '../types/permissions';
 import {
   InMemoryDataProxy,
@@ -18,8 +20,18 @@ import {
   RecordingPluginLogger,
   TestPluginContext,
 } from './in-memory-services';
+import {
+  InMemoryModuleCallsProxy,
+  invokeExportedOperation,
+} from './module-calls';
 
 export * from './in-memory-services';
+export { InMemoryModuleCallsProxy } from './module-calls';
+export type {
+  RecordedCall,
+  StubbedCallScope,
+  StubbedOperation,
+} from './module-calls';
 export { matchesFilter } from './match-filter';
 
 export interface PluginTestingOptions {
@@ -43,6 +55,17 @@ export interface PluginTestHarness {
   events: RecordingEventBusProxy;
   lifecycle: InMemoryModuleLifecycleProxy;
   logger: RecordingPluginLogger;
+  // Other modules' operations, as stubs (`calls.stub(namespace, operation, handler)`)
+  calls: InMemoryModuleCallsProxy;
+  /**
+   * Calls one of this plugin's exported operations as module `caller` would, with the host's checks (exported to
+   * the caller, the acting user's ability, plain JSON both ways). Needs an actor and a tenant.
+   */
+  invokeExport<TResult = JsonValue>(
+    operation: string,
+    input: JsonValue | undefined,
+    options: { caller: string },
+  ): Promise<TResult>;
   close(): Promise<void>;
 }
 
@@ -100,8 +123,13 @@ function testRuntimeModule(
         ),
       },
       { provide: PluginLogger, useValue: new RecordingPluginLogger() },
+      {
+        provide: ModuleCallsProxy,
+        useValue: new InMemoryModuleCallsProxy(context),
+      },
     ],
     exports: [
+      ModuleCallsProxy,
       PluginContext,
       UsersProxy,
       DataProxy,
@@ -140,15 +168,31 @@ export async function createPluginTestHarness(
     options,
   ).compile();
   await module.init();
+  const context = module.get(PluginContext) as TestPluginContext;
+  const providers = getPluginDefinition(pluginModule)!.providers;
 
   return {
     module,
-    context: module.get(PluginContext) as TestPluginContext,
+    context,
     users: module.get(UsersProxy) as InMemoryUsersProxy,
     data: module.get(DataProxy) as InMemoryDataProxy,
     events: module.get(EventBusProxy) as RecordingEventBusProxy,
     lifecycle: module.get(ModuleLifecycleProxy) as InMemoryModuleLifecycleProxy,
     logger: module.get(PluginLogger) as RecordingPluginLogger,
+    calls: module.get(ModuleCallsProxy) as InMemoryModuleCallsProxy,
+    invokeExport: <TResult = JsonValue>(
+      operation: string,
+      input: JsonValue | undefined,
+      { caller }: { caller: string },
+    ) =>
+      invokeExportedOperation<TResult>(
+        module,
+        providers,
+        context,
+        operation,
+        input,
+        caller,
+      ),
     close: () => module.close(),
   };
 }
