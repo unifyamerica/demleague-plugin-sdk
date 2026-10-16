@@ -58,6 +58,7 @@ export class TestPluginContext extends PluginContext {
   private currentActor: PluginActor | null;
   private currentTenant: PluginOrganization | null = null;
   private currentEventUserId: string | null = null;
+  private currentCaller: string | null = null;
 
   constructor(
     readonly manifest: Readonly<PluginManifest>,
@@ -112,6 +113,15 @@ export class TestPluginContext extends PluginContext {
 
   setEventUserId(userId: string | null): void {
     this.currentEventUserId = userId;
+  }
+
+  caller(): string | null {
+    return this.currentCaller;
+  }
+
+  /** The module calling one of the plugin's exported operations (set by the harness's `invokeExport()`). */
+  setCaller(caller: string | null): void {
+    this.currentCaller = caller;
   }
 
   /**

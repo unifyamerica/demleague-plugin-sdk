@@ -6,6 +6,12 @@ import {
   PluginAbilities,
   PluginAbilityActions,
 } from '../types/abilities';
+import {
+  ANY_CONSUMER,
+  OPERATION_NAME_PATTERN,
+  PluginCalls,
+  PluginExports,
+} from '../types/calls';
 import { isCoreEvent } from '../types/events';
 import { ModuleLifecycleHooks } from '../types/lifecycle';
 import {
@@ -235,8 +241,144 @@ export function validateManifest(manifest: PluginManifest): string[] {
   validateLimits(manifest.limits, problems);
   validateAbilities(manifest.abilities, problems);
   validateUi(manifest.ui, problems);
+  validateExports(manifest, problems);
+  validateCalls(manifest.calls, namespace, problems);
 
   return problems;
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const EXPORT_FIELDS = ['summary', 'ability', 'consumers'];
+
+function validateExports(manifest: PluginManifest, problems: string[]): void {
+  // ℹ️ Not `exports`: that's the CommonJS module object in the compiled code
+  const declared: PluginExports | undefined = manifest.exports;
+  if (declared === undefined) {
+    return;
+  }
+  if (!isObject(declared)) {
+    problems.push('exports must be an object of operation → declaration');
+    return;
+  }
+
+  for (const [operation, declaration] of Object.entries(declared)) {
+    const where = `exports["${operation}"]`;
+    if (!OPERATION_NAME_PATTERN.test(operation)) {
+      problems.push(
+        `exported operation "${operation}" must be lowercase kebab-case segments separated by dots, e.g. "notes.list"`,
+      );
+    }
+    if (!isObject(declaration)) {
+      problems.push(`${where} must be an object`);
+      continue;
+    }
+    Object.keys(declaration)
+      .filter((field) => !EXPORT_FIELDS.includes(field))
+      .forEach((field) =>
+        problems.push(`${where}.${field} is not a known field`),
+      );
+    if (
+      declaration.summary !== undefined &&
+      typeof declaration.summary !== 'string'
+    ) {
+      problems.push(`${where}.summary must be a string`);
+    }
+
+    const { ability, consumers } = declaration;
+    if (ability !== undefined) {
+      if (!isObject(ability)) {
+        problems.push(`${where}.ability must be { action, subject }`);
+      } else {
+        if (
+          !(Object.values(PluginAbilityActions) as string[]).includes(
+            ability.action,
+          )
+        ) {
+          problems.push(
+            `${where}.ability: unknown action "${String(ability.action)}"`,
+          );
+        }
+        if (!Object.hasOwn(manifest.abilities ?? {}, ability.subject)) {
+          problems.push(
+            `${where}.ability: subject "${String(ability.subject)}" is not declared in abilities`,
+          );
+        }
+      }
+    }
+
+    if (consumers === ANY_CONSUMER) {
+      continue;
+    }
+    if (!Array.isArray(consumers) || consumers.length === 0) {
+      problems.push(
+        `${where}.consumers must be "${ANY_CONSUMER}" or a non-empty array of namespaces`,
+      );
+      continue;
+    }
+    for (const consumer of consumers) {
+      if (typeof consumer !== 'string' || !NAMESPACE_PATTERN.test(consumer)) {
+        problems.push(
+          `${where}.consumers: "${String(consumer)}" is not a namespace`,
+        );
+      } else if (consumer === manifest.namespace) {
+        problems.push(
+          `${where}.consumers: a plugin can't export to itself ("${consumer}")`,
+        );
+      }
+    }
+    for (const duplicate of findDuplicates(consumers)) {
+      problems.push(
+        `${where}.consumers: "${duplicate}" is listed more than once`,
+      );
+    }
+  }
+}
+
+function validateCalls(
+  calls: PluginCalls | undefined,
+  namespace: string,
+  problems: string[],
+): void {
+  if (calls === undefined) {
+    return;
+  }
+  if (!isObject(calls)) {
+    problems.push('calls must be an object of namespace → { operations }');
+    return;
+  }
+
+  for (const [provider, declaration] of Object.entries(calls)) {
+    const where = `calls["${provider}"]`;
+    if (!NAMESPACE_PATTERN.test(provider)) {
+      problems.push(`${where}: "${provider}" is not a namespace`);
+    } else if (provider === namespace) {
+      problems.push(`${where}: a plugin can't call itself`);
+    }
+    const operations: unknown = isObject(declaration)
+      ? declaration.operations
+      : undefined;
+    if (!Array.isArray(operations) || operations.length === 0) {
+      problems.push(`${where}.operations must be a non-empty array`);
+      continue;
+    }
+    for (const operation of operations) {
+      if (
+        typeof operation !== 'string' ||
+        !OPERATION_NAME_PATTERN.test(operation)
+      ) {
+        problems.push(
+          `${where}.operations: "${String(operation)}" is not an operation name`,
+        );
+      }
+    }
+    for (const duplicate of findDuplicates(operations as string[])) {
+      problems.push(
+        `${where}.operations: "${duplicate}" is listed more than once`,
+      );
+    }
+  }
 }
 
 function validateActions(

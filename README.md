@@ -7,7 +7,9 @@ plugins live in their own repos.
 
 **Building a plugin?** Start with the [Plugin Developer Guide](PLUGIN_DEVELOPER_GUIDE.md): how a plugin gets
 into production, the manifest, permissions, data, events, the UI, testing and releasing. The example plugin,
-[demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes), is the template.
+[demleague-plugin-acme-notes](https://github.com/unifyamerica/demleague-plugin-acme-notes), is the template;
+[demleague-plugin-acme-tasks](https://github.com/unifyamerica/demleague-plugin-acme-tasks) shows one module
+calling another.
 
 | Entry | For | Format |
 | --- | --- | --- |
@@ -66,7 +68,8 @@ template for new ones.
 export class AcmeNotesPlugin {}
 ```
 
-Inject what you need (`UsersProxy`, `DataProxy`, `EventBusProxy`, `PluginContext`, `PluginLogger`) like any provider. Get the caller with `@CurrentActor()`, and the organization the request
+Inject what you need (`UsersProxy`, `DataProxy`, `EventBusProxy`, `ModuleLifecycleProxy`, `ModuleCallsProxy`,
+`PluginContext`, `PluginLogger`) like any provider. Get the caller with `@CurrentActor()`, and the organization the request
 acts in (the `X-Tenant` header) with `PluginContext.tenant()`. Authenticated endpoints always have one (the
 host answers 400 without it) and the host has already checked the caller is an active member of it; it can
 only be `null` on a public endpoint called without the header, or in a handler for an event about no
@@ -113,6 +116,45 @@ this.lifecycle.onUpgraded(async (event) => { /* migrate from event.lastPluginVer
 Hooks run in that organization without an acting user, are retried until they succeed (so make them
 idempotent), and a module with `onEnabled` is only on once it has succeeded. Test them with
 `harness.lifecycle.enable(orgId)`, `disable(orgId)`, `removeData(orgId)` and `upgrade(orgId, { lastPluginVersion })`.
+
+### Calls between modules
+
+A module never imports another module's package or reads its collections. It calls the operations the other
+module **exports**, through the host. The provider declares and implements them:
+
+```ts
+// acme.notes: manifest
+exports: {
+  'notes.list': { ability: { action: 'read', subject: 'Note' }, consumers: '*' },  // any approved module
+  'notes.create': { ability: { action: 'create', subject: 'Note' }, consumers: ['acme.tasks'] },
+},
+
+// acme.notes: a class provider
+@ExportedOperation('notes.list')
+async list(input: { limit?: number } | null, call: PluginCallInfo): Promise<NoteSummary[]> { … }
+```
+
+The caller declares what it calls, and the core team approves each connection in its registry entry
+(`approvedCalls`):
+
+```ts
+// acme.tasks: manifest
+calls: { 'acme.notes': { operations: ['notes.list', 'notes.create'] } },
+
+// acme.tasks: any provider
+constructor(private readonly modules: ModuleCallsProxy) {}
+const notes = await this.modules.call<NoteSummary[]>('acme.notes', 'notes.list', { limit: 5 });
+```
+
+A call runs in the provider (its proxies, permissions, data and quotas) for the same acting user, in the same
+organization; the host checks the export's `ability` for that user and that the provider is on in the
+organization. Only plain JSON crosses (at most `MAX_CALL_PAYLOAD_BYTES`), copied both ways, so validate the
+input in the operation (no `ValidationPipe` runs) and return ISO strings, not dates. SDK errors reach the caller
+as they are; anything else becomes `PluginCallFailedError`. Calls need an acting user (not in public endpoints,
+event handlers or lifecycle hooks), can't call back into a module already in the chain, go at most
+`MAX_CALL_DEPTH` deep and count against the provider's `callsPerMinute`. **Dependencies are soft:** handle
+`PluginCallUnavailableError` (the module isn't installed or isn't turned on in this organization). Declare the
+shape of the results yourself: you can't import the provider's types.
 
 ## A UI in 30 seconds
 
@@ -161,7 +203,8 @@ library mode, keeping those packages external (see `plugins/acme-notes/vite.conf
 | Rule | Where |
 | --- | --- |
 | Manifest is valid (namespace, semver, permissions, endpoints, events, limits) | `@PluginModule()` at class definition, and again at startup |
-| Namespace is registered to your package; permissions, public endpoints, ability grants and UI slots are approved | Startup (`namespace-registry.json`) |
+| Namespace is registered to your package; permissions, public endpoints, ability grants, UI slots and calls to other modules (`approvedCalls`) are approved | Startup (`namespace-registry.json`) |
+| Every exported operation has exactly one `@ExportedOperation()` method on a class provider, and every such method is exported; each call is exported to you by the provider (a provider that isn't loaded is only a warning) | Startup |
 | `@RequireAbility()` names a platform subject or one declared in `manifest.abilities` | Startup |
 | Every controller route is declared in `endpoints`, and every declared endpoint exists | Startup |
 | You only inject SDK services and your own providers (no core services, DB connection, `ModuleRef`) | Startup |
@@ -172,6 +215,7 @@ library mode, keeping those packages external (see `plugins/acme-notes/vite.conf
 | Data is per organization: a user's request only reaches its tenant's records | Every call |
 | Data is only in your declared collections. Filters use a safe subset (`$eq $ne $in $nin $gt $gte $lt $lte $exists $and $or`). Documents can't have `$`/dotted keys. | Every call |
 | Events: only declared names; payloads are plain JSON, at most 32 KB, and frozen for subscribers | Every call |
+| Module calls: only declared ones, with an acting user and a tenant, the provider on in the tenant, the export's ability for that user; plain JSON, at most 256 KB each way, copied | Every call |
 
 ### Limits
 
@@ -183,6 +227,7 @@ library mode, keeping those packages external (see `plugins/acme-notes/vite.conf
 | `maxDocuments`, `maxStorageBytes` | Hard, for your live documents across all your collections: 507 `PLUGIN_STORAGE_QUOTA_EXCEEDED`. Removing documents frees space. |
 | `requestTimeoutMs` | The response fails with 503. Your handler can't be cancelled and keeps running. |
 | `eventHandlerTimeoutMs` | Logged and counted as a handler error |
+| `callsPerMinute` | Hard, on calls other modules make to your exported operations: 429 `PLUGIN_QUOTA_EXCEEDED` for the caller. A call is also bounded by your `requestTimeoutMs` (`PLUGIN_CALL_FAILED` for the caller). |
 | `maxMemoryMb` | Advisory only (plugins share the API process) |
 
 Sizes are the JSON of your own fields, not the ones the host adds (`id`, timestamps, `createdBy`).
@@ -216,12 +261,19 @@ harness.module.get(NotesService);                          // your providers
 harness.events.deliver('core.organization.member-added', { userId: 'u1', organizationId: 'o1' });  // simulate an event
 await harness.lifecycle.enable('o1');                     // run your onEnabled hook in o1
 harness.events.emitted; harness.data.store; harness.data.usage; harness.logger.messages;
+
+// Calls between modules
+harness.calls.stub('acme.notes', 'notes.list', (input, { actor, tenant }) => [/* … */]);  // other modules are stubs
+harness.calls.calls;                                       // what your code called; no stub = PluginCallUnavailableError
+await harness.invokeExport('notes.list', { limit: 5 }, { caller: 'acme.tasks' });  // run your own export like the host
 ```
 
 The harness enforces your declared storage limits and the per-organization isolation of data, users and
-organizations (`deliver()` runs handlers in the event's organization). It doesn't
-reproduce the acting user's own platform permissions or abilities, the rate limits or the registry's ceilings.
-The host adds those.
+organizations (`deliver()` runs handlers in the event's organization). For module calls, it refuses
+undeclared calls and calls without an actor and tenant, and copies input and results as plain JSON;
+`invokeExport()` also checks the export's consumers and the actor's ability from your manifest's grants. It doesn't
+reproduce the acting user's own platform permissions, the rate limits, the registry's ceilings and approvals,
+or the provider's own rules behind a stub. The host adds those.
 
 UI tests (Vitest, jsdom) use a fake host:
 

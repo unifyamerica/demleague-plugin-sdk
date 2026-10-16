@@ -259,3 +259,78 @@ describe('normalizeEndpointPath', () => {
     expect(normalizeEndpointPath(path)).toBe(expected);
   });
 });
+
+describe('validateManifest: exports and calls', () => {
+  const withAbilities = (overrides: Partial<PluginManifest>) =>
+    validManifest({
+      abilities: { Note: { organization: { member: ['read'] } } },
+      ...overrides,
+    });
+
+  it('should accept exports and calls', () => {
+    expect(
+      validateManifest(
+        withAbilities({
+          exports: {
+            'notes.list': {
+              summary: 'List notes',
+              ability: { action: 'read', subject: 'Note' },
+              consumers: ['beta.crm'],
+            },
+            'notes.count': { consumers: '*' },
+          },
+          calls: { 'beta.crm': { operations: ['contacts.find'] } },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('should reject malformed exports', () => {
+    expect(
+      validateManifest(
+        withAbilities({
+          exports: {
+            'Notes.List': { consumers: '*' },
+            'notes.a': {
+              ability: { action: 'fly' as never, subject: 'Task' },
+              consumers: [],
+            },
+            'notes.b': {
+              consumers: ['acme.notes', 'nope', 'beta.crm', 'beta.crm'],
+            },
+            'notes.c': { consumers: '*', allowSystem: true } as never,
+          },
+        }),
+      ),
+    ).toEqual([
+      expect.stringContaining('exported operation "Notes.List" must be'),
+      'exports["notes.a"].ability: unknown action "fly"',
+      'exports["notes.a"].ability: subject "Task" is not declared in abilities',
+      'exports["notes.a"].consumers must be "*" or a non-empty array of namespaces',
+      `exports["notes.b"].consumers: a plugin can't export to itself ("acme.notes")`,
+      'exports["notes.b"].consumers: "nope" is not a namespace',
+      'exports["notes.b"].consumers: "beta.crm" is listed more than once',
+      'exports["notes.c"].allowSystem is not a known field',
+    ]);
+  });
+
+  it('should reject malformed calls', () => {
+    expect(
+      validateManifest(
+        validManifest({
+          calls: {
+            'acme.notes': { operations: ['notes.list'] },
+            nope: { operations: [] },
+            'beta.crm': { operations: ['a.b', 'a.b', 'Bad'] },
+          },
+        }),
+      ),
+    ).toEqual([
+      `calls["acme.notes"]: a plugin can't call itself`,
+      'calls["nope"]: "nope" is not a namespace',
+      'calls["nope"].operations must be a non-empty array',
+      'calls["beta.crm"].operations: "Bad" is not an operation name',
+      'calls["beta.crm"].operations: "a.b" is listed more than once',
+    ]);
+  });
+});

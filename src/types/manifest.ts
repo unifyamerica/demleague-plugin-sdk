@@ -1,4 +1,5 @@
 import type { PluginAbilities } from './abilities';
+import type { PluginCalls, PluginExports } from './calls';
 import type { PluginLifecycleDeclarations } from './lifecycle';
 import type { PluginPermission } from './permissions';
 import type { PluginUiDeclaration } from './ui';
@@ -44,6 +45,7 @@ export interface PluginEventDeclarations {
 // - requestTimeoutMs: the response fails with 503 (the handler itself can't be cancelled in-process)
 // - eventHandlerTimeoutMs: reported and counted as a handler error
 // - lifecycleHookTimeoutMs: the hook counts as failed (and is retried); it can't be cancelled in-process
+// - callsPerMinute: hard limit on calls other modules make to this plugin's exported operations (rejected with 429)
 // - maxMemoryMb: advisory only, plugins run in the API's process
 export interface PluginResourceLimits {
   requestsPerMinute?: number;
@@ -55,6 +57,7 @@ export interface PluginResourceLimits {
   maxDocumentBytes?: number;
   maxDocuments?: number;
   maxStorageBytes?: number;
+  callsPerMinute?: number;
   maxMemoryMb?: number;
 }
 
@@ -70,6 +73,7 @@ export const DEFAULT_RESOURCE_LIMITS: Required<PluginResourceLimits> = {
   maxDocumentBytes: 64 * 1024,
   maxDocuments: 10_000,
   maxStorageBytes: 50 * 1024 * 1024,
+  callsPerMinute: 600,
   maxMemoryMb: 128,
 };
 
@@ -95,4 +99,8 @@ export interface PluginManifest {
   abilities?: PluginAbilities;
   // Where the plugin's UI appears in the SPA's menus (its pages need no declaration)
   ui?: PluginUiDeclaration;
+  // Operations other modules may call (implemented by `@ExportedOperation()` methods), and who may call them
+  exports?: PluginExports;
+  // Other modules' operations this plugin calls through `ModuleCallsProxy`, by provider namespace
+  calls?: PluginCalls;
 }
