@@ -31,7 +31,8 @@ it), and the token stays out of the repo, in your user `~/.npmrc`:
 //npm.pkg.github.com/:_authToken=<token>
 ```
 
-Then `npm install -D @unifyamerica/demleague-plugin-sdk` and list it in `peerDependencies` too. The package
+Then `npm install -D @unifyamerica/demleague-plugin-sdk` and list it in `peerDependencies` too, as a range up
+to the next major (`">=0.5.0 <1.0.0"`, not `^0.5.0`, which for `0.x` stops at the next minor; see Versioning). The package
 is public, but GitHub Packages still needs a token to install from it. Plugins are named
 `@unifyamerica/demleague-plugin-<vendor>-<module>` and live in a repo of the same name in the `unifyamerica`
 org (see the [plugin developer guide](PLUGIN_DEVELOPER_GUIDE.md), §16). The example plugin,
@@ -156,6 +157,26 @@ event handlers or lifecycle hooks), can't call back into a module already in the
 `PluginCallUnavailableError` (the module isn't installed or isn't turned on in this organization). Declare the
 shape of the results yourself: you can't import the provider's types.
 
+### Scheduled jobs
+
+The API runs as many instances, so plugins don't use timers or cron libraries. Declare jobs (and, optionally,
+recurring schedules) in the manifest, handle each with a `@JobHandler()` method, and schedule runs with
+`JobsProxy`. The host keeps them in its database and runs each on exactly one instance when it's due:
+
+```ts
+// manifest: jobs: { 'round-end': { timeoutMs: 10_000 } },
+//           schedules: { nightly: { cron: '0 3 * * *', job: 'cleanup', scope: 'organization' } }
+@JobHandler('round-end')
+async roundEnd(job: PluginJob<{ assemblyId: string }>) { /* idempotent: runs at least once */ }
+
+await this.jobs.schedule('round-end', { runAt: endsAt, payload: { assemblyId }, key: `round-end:${assemblyId}` });
+```
+
+Jobs run without an acting user in the organization they were scheduled in, only while the module is on there,
+within a second or two of `runAt`, and are retried (5 s, 10 s, 20 s…) up to `maxAttempts`. The core team approves
+each job (`approvedJobs`) and each schedule with its cron expression (`approvedSchedules`). Test them with
+`harness.jobs.runDue(at)`.
+
 ## A UI in 30 seconds
 
 ```ts
@@ -221,6 +242,8 @@ library mode, keeping those packages external (see `plugins/acme-notes/vite.conf
 | Data is only in your declared collections. Filters use a safe subset (`$eq $ne $in $nin $gt $gte $lt $lte $exists $and $or`). Documents can't have `$`/dotted keys. | Every call |
 | Events: only declared names; payloads are plain JSON, at most 32 KB, and frozen for subscribers | Every call |
 | Module calls: only declared ones, with an acting user and a tenant, the provider on in the tenant, the export's ability for that user; plain JSON, at most 256 KB each way, copied | Every call |
+| Jobs and schedules match the `@JobHandler()` methods and are approved (each schedule with its cron expression) | Startup |
+| Jobs: only declared ones; plain JSON payloads, at most 32 KB; one pending job per key and organization; run only while the module is on in their organization | Every call / run |
 
 ### Limits
 
@@ -234,6 +257,9 @@ library mode, keeping those packages external (see `plugins/acme-notes/vite.conf
 | `eventHandlerTimeoutMs` | Logged and counted as a handler error |
 | `callsPerMinute` | Hard, on calls other modules make to your exported operations: 429 `PLUGIN_QUOTA_EXCEEDED` for the caller. A call is also bounded by your `requestTimeoutMs` (`PLUGIN_CALL_FAILED` for the caller). |
 | `maxMemoryMb` | Advisory only (plugins share the API process) |
+| `jobsPerMinute`, `maxPendingJobs` | Hard, on `JobsProxy.schedule()`: 429 `PLUGIN_QUOTA_EXCEEDED` |
+| `jobTimeoutMs` | A run that takes longer counts as failed and is retried; its code keeps running |
+| `maxConcurrentJobs` | How many of your jobs one API instance runs at once |
 
 Sizes are the JSON of your own fields, not the ones the host adds (`id`, timestamps, `createdBy`).
 
@@ -300,7 +326,8 @@ the host refuses plugins built against another API version.
 
 - **Patch:** bug fixes and better error messages.
 - **Minor:** new proxy methods, new core events, new optional manifest fields, new platform roles, new UI
-  slots or composables.
+  slots or composables. Plugins declare the SDK peer as `">=<the minor they need> <1.0.0"`, so a minor
+  doesn't force every plugin to release again.
 - **Major:** removed or renamed proxy methods, changed DTO shapes, or new required manifest fields. Ship it
   with a migration guide and a deprecation window.
 

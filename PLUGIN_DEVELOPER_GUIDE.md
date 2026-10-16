@@ -13,7 +13,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 [How a plugin gets into production](#3-how-a-plugin-gets-into-production), then use
 [the checklist](#17-submission-checklist) to follow progress.
 
-> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.4.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
+> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.5.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
 > PrimeVue 4.
 
 ---
@@ -32,6 +32,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 10. [Storing data](#10-storing-data)
 11. [Events](#11-events)
     - 11a. [Calls between modules](#11a-calls-between-modules)
+    - 11b. [Scheduled jobs](#11b-scheduled-jobs)
 12. [Building the UI](#12-building-the-ui)
 13. [Resource limits](#13-resource-limits)
 14. [Errors](#14-errors)
@@ -72,6 +73,8 @@ organization, then installed into the platform through a pull request the core t
 - Read the current organization's members, and update a member's profile name and timezone
 - Emit its own events and react to platform events and other plugins' events
 - Export operations other modules may call, and call the operations other modules export to it
+- Schedule jobs to run later (once, at a time it picks) and on recurring schedules (cron), run by the host on
+  one API instance, retried if they fail
 - Declare its own abilities (e.g. `read Note`), granted to organization roles once approved,
   and restrict endpoints and pages with them or with platform abilities
 - Know which organization (tenant) a request acts in
@@ -90,7 +93,9 @@ organization, then installed into the platform through a pull request the core t
 - Read configuration from environment variables (there is no configuration API yet)
 - Register global guards, interceptors, filters or pipes, or import other Nest modules
 - Declare database indexes
-- Rely on events being delivered: they are in-memory and can be lost on a crash
+- Rely on events being delivered: they are in-memory and can be lost on a crash (use a job for work that must
+  happen)
+- Run timers, `setInterval` or a cron library: use jobs (§11b)
 - Be installed or updated at runtime: the UI is bundled into the SPA at build time
 
 If a feature needs something on the second list, ask the core team for a new SDK capability. Don't work
@@ -417,7 +422,7 @@ vitest.config.mts              runs src/ui/**/*.spec.ts
     "lint": "eslint \"src/**/*.{ts,vue}\""
   },
   "peerDependencies": {                     // NEVER regular dependencies
-    "@unifyamerica/demleague-plugin-sdk": "^0.4.0",
+    "@unifyamerica/demleague-plugin-sdk": ">=0.5.0 <1.0.0",  // the minor your code needs, up to the next major (§20)
     "@nestjs/common": "^12.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.0",
@@ -498,6 +503,22 @@ interface PluginManifest {
   ui?: { slots?: PluginUiSlot[] };    // 'main-menu' | 'profile-menu', see §12
   exports?: Record<string, PluginExportDeclaration>; // operation → declaration, see §11a
   calls?: Record<string, { operations: string[] }>;  // provider namespace → operations, see §11a
+  jobs?: Record<string, PluginJobDeclaration>;       // job name → declaration, see §11b
+  schedules?: Record<string, PluginScheduleDeclaration>; // schedule name → declaration, see §11b
+}
+
+interface PluginJobDeclaration {      // §11b
+  summary?: string;
+  timeoutMs?: number;                 // at most your jobTimeoutMs limit (the default)
+  maxAttempts?: number;               // 1–10, default 3
+}
+
+interface PluginScheduleDeclaration { // §11b
+  summary?: string;
+  cron: string;                       // five fields, e.g. '0 3 * * *'
+  timeZone?: string;                  // IANA, default 'UTC'
+  job: string;                        // declared in jobs
+  scope: 'organization' | 'global';
 }
 
 interface PluginExportDeclaration {
@@ -1202,6 +1223,114 @@ caller) the provider being unavailable.
 
 ---
 
+## 11b. Scheduled jobs
+
+DemLeagueOS runs as many API instances at once, so a plugin can't use timers, `setInterval` or a cron library:
+every instance would run them. Declare **jobs** instead, and the host runs each one on exactly one instance
+when it's due, however many instances there are.
+
+```ts
+// manifest.ts
+jobs: {
+  'round-end': { summary: 'Close a round and open the next', timeoutMs: 10_000, maxAttempts: 5 },
+  cleanup: { summary: 'Remove expired drafts' },
+},
+schedules: {
+  'nightly-cleanup': { cron: '0 3 * * *', timeZone: 'America/New_York', job: 'cleanup', scope: 'organization' },
+},
+```
+
+| Field | Meaning |
+| --- | --- |
+| `jobs.<name>.timeoutMs` | How long one run may take; at most your `jobTimeoutMs` limit (also the default). A run that takes longer counts as failed and is retried, **but its code keeps running**. |
+| `jobs.<name>.maxAttempts` | Runs before the job counts as failed, the first included (default 3, at most 10). Retries wait 5 s, 10 s, 20 s… up to an hour. |
+| `schedules.<name>.cron` | Five fields (minute hour day-of-month month day-of-week), e.g. `*/15 * * * *` |
+| `schedules.<name>.timeZone` | The IANA zone the cron expression is read in (default `UTC`) |
+| `schedules.<name>.scope` | `organization`: one run per organization the module is on in, in that organization. `global`: one run for the whole platform, in no organization (the core team approves these separately) |
+
+Names are lowercase kebab-case. The core team approves each job (`approvedJobs`) and each schedule **with its
+cron expression** (`approvedSchedules`), so how often a schedule runs is their decision.
+
+**Handling a job:** one `@JobHandler()` method per job, on a class provider listed in `providers` (the host
+refuses to start if jobs and handlers don't match exactly):
+
+```ts
+@Injectable()
+export class RoundJobs {
+  constructor(private readonly assemblies: AssembliesService) {}
+
+  @JobHandler('round-end')
+  async roundEnd(job: PluginJob<{ assemblyId: string; phase: string }>): Promise<void> {
+    // At least once: check the state before changing it, so a second run does nothing
+    await this.assemblies.closeRound(job.payload.assemblyId, job.payload.phase);
+  }
+}
+```
+
+`PluginJob` carries `id`, `name`, `key`, a frozen copy of the `payload`, `scheduledFor` (when it was due, ISO),
+`attempt` (1, 2…) and `schedule` (the recurring schedule it's an occurrence of, or `null`). Throwing fails the
+run.
+
+**Scheduling a job** with `JobsProxy`, from an endpoint, a job, an event handler or a lifecycle hook. The job is
+kept in the current organization and runs in it:
+
+```ts
+constructor(private readonly jobs: JobsProxy) {}
+
+await this.jobs.schedule('round-end', {
+  runAt: endsAt,                                   // or delayMs; omitted or past: as soon as possible
+  payload: { assemblyId, phase: 'q1-r2' },         // plain JSON, at most 32 KB
+  key: `round-end:${assemblyId}:q1-r2`,            // dedup: while it's pending or running, scheduling it again returns it
+  expiresAt,                                       // optional: canceled instead of running after this
+});
+await this.jobs.reschedule(`round-end:${assemblyId}:q1-r2`, newEndsAt);   // pending only
+await this.jobs.cancel(`round-end:${assemblyId}:q1-r2`);                 // pending only; false if none
+const job = await this.jobs.find(`round-end:${assemblyId}:q1-r2`);       // the latest with that key, any status
+```
+
+Keys are 1–200 letters, digits, `:`, `.`, `_` or `-`; `schedule:` is reserved. A job can be scheduled at most a
+year ahead.
+
+**How jobs run:**
+
+- **On one instance, at least once.** The host claims each due job with a lease in its database. If the
+  instance dies mid-run, the lease expires and another instance runs the job again. Make every handler
+  idempotent: check the state it's about to change (e.g. "is this round still open?") before changing it.
+- **When:** normally within a second or two of `runAt`. Don't rely on sub-second precision.
+- **Where:** in the organization it was scheduled in (`tenant()`), without an acting user (`actor()` is null),
+  under your plugin's permissions, like an event handler. Calls to other modules aren't available there.
+- **Only while your module is on** in that organization. A one-off job waits until it's turned back on (or until
+  its `expiresAt`); a schedule's occurrence is skipped, and the schedule picks up again once it's back on. "Remove
+  data" deletes the organization's jobs. Cancel scheduled work in `onDisabled` if it shouldn't run late.
+- **Retries:** a failed run is retried after 5 s, 10 s, 20 s… up to `maxAttempts`, then marked failed. Org
+  admins see failed jobs on the Modules page and can retry them.
+- **Recurring schedules** run at each cron time; a missed occurrence (the module was off, the platform was
+  down) is skipped, not caught up.
+- **Limits:** `jobsPerMinute` (scheduling), `maxPendingJobs` (pending across organizations), `jobTimeoutMs`
+  and `maxConcurrentJobs` (runs at the same time per API instance), see §13. Each `JobsProxy` call counts as a DB
+  operation.
+
+Errors: `PluginUndeclaredJobError` (not in `manifest.jobs`), `PluginValidationError` (bad options or payload),
+`PluginPayloadTooLargeError`, `PluginQuotaExceededError` (`jobsPerMinute`, `maxPendingJobs`).
+
+### Testing jobs
+
+The harness keeps jobs in memory and runs them only when your test says so, like the host (no actor, in the
+job's organization, retries with the same backoff):
+
+```ts
+await service.startRound(assemblyId);                         // schedules 'round-end'
+expect(harness.jobs.pending()).toEqual([expect.objectContaining({ name: 'round-end', key: 'round-end:a1:q1-r1' })]);
+await harness.jobs.runDue(new Date('2027-08-01T12:01:00Z'));  // runs what's due then (and what those runs schedule, if due)
+await harness.jobs.runSchedule('nightly-cleanup', 'org-a');   // one occurrence of a schedule, in that organization
+```
+
+`runDue()` and `run(key)` resolve each run's `{ id, name, key, status, error }`: `done`, `pending` (it failed and
+will be retried: call `runDue()` again with a later time), `failed` or `canceled` (expired). `harness.jobs.jobs`
+has every job. Run a job twice in a test to check it's idempotent.
+
+---
+
 ## 12. Building the UI
 
 A plugin may ship a Vue 3 UI for the SPA: pages, menu entries, stores and translations, styled with Tailwind
@@ -1443,6 +1572,10 @@ Declare what your plugin needs in `manifest.limits`. Each effective limit is
 | `maxStorageBytes` | 50 MB | 5 GB | Live bytes across all your collections, 507 |
 | `callsPerMinute` | 600 | 6,000 | Calls other modules make to your exported operations, 429 `PLUGIN_QUOTA_EXCEEDED` for the caller |
 | `maxMemoryMb` | 128 | 512 | Advisory only |
+| `jobsPerMinute` | 120 | 6,000 | Jobs you schedule, 429 `PLUGIN_QUOTA_EXCEEDED` from `JobsProxy.schedule()` |
+| `maxPendingJobs` | 10,000 | 1,000,000 | Your pending jobs across organizations, 429 from `schedule()` |
+| `jobTimeoutMs` | 30,000 | 600,000 | Per job run (a job's `timeoutMs` can only lower it). The run counts as failed and is retried. **It keeps running.** |
+| `maxConcurrentJobs` | 2 | 8 | Your jobs one API instance runs at the same time |
 
 **For planning:** size `maxDocuments` and `maxStorageBytes` from expected users × records per user ×
 average record size, then add headroom. If the numbers exceed the defaults, raise it with the core team
@@ -1531,13 +1664,16 @@ afterEach(() => harness.close());
 | `harness.logger.messages` | `{ level, message }[]` |
 | `harness.calls.stub(namespace, operation, (input, { actor, tenant }) => result)` | What another module's operation does in this test (§11a). Without a stub, a call fails with `PluginCallUnavailableError` |
 | `harness.calls.calls` / `harness.calls.unstub(namespace)` | The calls your code made (`{ namespace, operation, input }`) / make a module unavailable again |
+| `harness.jobs.pending()` / `harness.jobs.jobs` | Your pending jobs (soonest first) / every job, whatever its status (§11b) |
+| `await harness.jobs.runDue(at?)` / `run(keyOrId)` / `runSchedule(name, orgId?)` | Runs due jobs / one job / one occurrence of a schedule like the host does (actor `null`, in the job's organization), retrying failures with the host's backoff |
 | `await harness.invokeExport(operation, input, { caller })` | Runs one of your exported operations like the host does when `caller` calls it: checks `consumers` and the actor's ability from your grants, copies input and result, sets `PluginContext.caller()`. Needs an actor and a tenant |
 
 Use `createPluginTestingModule(Plugin, options)` instead when you need `.overrideProvider()` before
 compiling.
 
 **What the harness doesn't reproduce:** the acting user's own platform permissions, `@RequireAbility()`, rate
-limits, registry approvals and ceilings, and (behind a stub) the other module's own rules. Those are host-only, so cover those paths in review or end-to-end
+limits, registry approvals and ceilings, (behind a stub) the other module's own rules, and for jobs the
+timeouts, `jobsPerMinute`, concurrency and the module being on. Those are host-only, so cover those paths in review or end-to-end
 tests against a local DemLeagueOS.
 
 **Minimum test set expected in review:**
@@ -1551,6 +1687,8 @@ tests against a local DemLeagueOS.
 - emitted events (`harness.events.emitted`)
 - each exported operation via `harness.invokeExport`: the happy path, input validation and the ability denial
 - each call to another module with `harness.calls.stub`, including the provider being unavailable
+- each job via `harness.jobs` (what schedules it, what it does, that a second run changes nothing, a failure),
+  and each recurring schedule with `runSchedule()`
 - if there's a UI: the UI definition is valid (importing `src/ui/index.ts` runs `define()`), and each page's
   main paths, including what it hides without an ability and without an organization
 
@@ -1739,6 +1877,8 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
       validates its input and returns only plain JSON callers need; its input and result are documented
 - [ ] Each call to another module is declared, requested in `approvedCalls`, and the caller works (or fails
       clearly) when that module is unavailable
+- [ ] Each job is declared, has one `@JobHandler()`, is idempotent and requested in `approvedJobs`; each
+      schedule is requested in `approvedSchedules` with its cron expression (and `approvedGlobalSchedules` if global)
 
 **Code**
 - [ ] Imports only from the allowed packages (server and UI); no `process.env`, `eval`, `require`, or `console`
@@ -1763,7 +1903,8 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
       `publishConfig.registry` is `https://npm.pkg.github.com`
 - [ ] Released by pushing a `v<version>` tag: the org's release workflow built, attested and published it
       (never `npm publish` by hand)
-- [ ] Registry request (permissions, endpoints, grants, slots, limits, with reasons) sent to the core team
+- [ ] Registry request (permissions, endpoints, grants, slots, calls, jobs, schedules, limits, with reasons) sent to
+      the core team
 - [ ] Install PR (opened by the core team) has the exact version pins, `plugins.config.ts` entries (API, and
       SPA if UI) and the registry entry
 - [ ] The **Plugin contract** and **CI** checks pass on the PR
@@ -1776,6 +1917,7 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
 | --- | --- | --- |
 | `Invalid plugin manifest for X: ...` on import | `validateManifest` problems | Read the listed problems. Run `manifest.spec.ts`. |
 | API refuses to start: plugin built with another SDK copy | SDK listed in `dependencies` | Move it to `peerDependencies`, then reinstall. |
+| Same, after DemLeagueOS upgraded the SDK | Your peer range (e.g. `^0.4.0`) excludes its version, so npm installed a second copy for your plugin | Widen it to `">=0.4.0 <1.0.0"` and release (§20). |
 | API refuses to start: route not declared, or declared endpoint missing | Controller and manifest are out of sync | Make `@Controller` + handler paths match `endpoints[].path` exactly. |
 | API refuses to start: `X injects Y, which is not an SDK service...` | Injected a core service, `ModuleRef`, a DB connection, or a provider not listed in `providers` | Only inject SDK proxies and your own providers, and add them to `providers`. |
 | API refuses to start: permission / public endpoint not approved | Registry entry is missing or outdated | Request approval in `namespace-registry.json`. |
@@ -1840,6 +1982,9 @@ These come from the current in-process plugin model. They're listed so you can p
   dependencies are soft: nothing stops an organization from turning off a module others call. A timed-out call
   fails for the caller, but the provider's code keeps running. There are no typed operation contracts: callers
   declare the result shapes themselves.
+- **Jobs run at least once**, within a second or two of when they're due, never exactly once: make handlers
+  idempotent. A timed-out run is retried while its code keeps running, so a retry can overlap it. Jobs run
+  without an acting user, so they can't call other modules.
 - **Ability grants are per organization role** (`member`, `org_admin`); there are no system-wide roles. There are
   no per-record conditions beyond the organization: check ownership in your code.
 
@@ -1855,11 +2000,15 @@ These come from the current in-process plugin model. They're listed so you can p
   plugin.
   - **Patch:** fixes, better error messages.
   - **Minor:** new proxy methods, new core events, new optional manifest fields (as `abilities`, `ui`,
-    `exports` and `calls` were), new grantable organization roles.
+    `exports`, `calls`, `jobs` and `schedules` were), new grantable organization roles.
   - **Major:** removed or renamed methods, changed DTO shapes, new required manifest fields. Ships with a
     migration guide and a deprecation window.
 - `SDK_API_VERSION` is bumped only on breaking changes. The host refuses plugins built against another API
   version, so you must rebuild and release a new version (a new tag).
+- **Declare the SDK peer as a range up to the next major**: `">=0.5.0 <1.0.0"` (the lowest minor whose features
+  you use). For a `0.x` version, `^0.5.0` means `<0.6.0`, so when DemLeagueOS moves to the next additive minor,
+  npm would give your plugin a second SDK copy and the host would refuse it until you released again. Minors only
+  add, and breaking changes bump `SDK_API_VERSION`, which the host checks, so the wider range is safe.
 - Everything exported from the SDK's entry points (`.`, `/testing`, `/manifest`, `/vue`, `/vue/testing`)
   is the contract, except `installPluginHost`, which only the SPA calls. Don't depend on internals or on host
   behavior that isn't documented here.
