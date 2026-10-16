@@ -50,9 +50,15 @@ const MAX_FILTER_DEPTH = 4;
 const MAX_IN_VALUES = 100;
 const FIELD_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
+// ℹ️ Realm-independent on purpose: values made by `structuredClone` (the test harness copies documents with
+// it) or in another VM context (Jest runs each test file in one) have that realm's `Date` and `Object.prototype`,
+// so `instanceof Date` and `=== Object.prototype` would reject them.
+export const isDate = (value: unknown): value is Date =>
+  Object.prototype.toString.call(value) === '[object Date]';
+
 const isScalar = (value: unknown): value is FilterScalar =>
   value === null ||
-  value instanceof Date ||
+  isDate(value) ||
   ['string', 'number', 'boolean'].includes(typeof value);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
@@ -60,12 +66,13 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
     typeof value !== 'object' ||
     value === null ||
     Array.isArray(value) ||
-    value instanceof Date
+    Object.prototype.toString.call(value) !== '[object Object]'
   ) {
     return false;
   }
+  // `Object.prototype` of any realm (its own prototype is null), or no prototype at all
   const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+  return prototype === null || Object.getPrototypeOf(prototype) === null;
 };
 
 function assertField(field: string): void {
@@ -188,11 +195,7 @@ export function assertSafeDocument(document: unknown, depth = 0): void {
     return;
   }
 
-  if (
-    document === null ||
-    typeof document !== 'object' ||
-    document instanceof Date
-  ) {
+  if (document === null || typeof document !== 'object' || isDate(document)) {
     if (
       typeof document === 'function' ||
       typeof document === 'symbol' ||

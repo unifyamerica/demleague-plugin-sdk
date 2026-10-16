@@ -13,7 +13,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 [How a plugin gets into production](#3-how-a-plugin-gets-into-production), then use
 [the checklist](#17-submission-checklist) to follow progress.
 
-> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.3.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
+> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.4.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
 > PrimeVue 4.
 
 ---
@@ -81,8 +81,9 @@ organization, then installed into the platform through a pull request the core t
 
 - Import core API code, reach the database directly, or inject core services
 - Import core SPA code, `vue-router`, Pinia directly, or an HTTP client in its UI
-- Include, create or inject iframes (or `frame`, `object`, `embed`) in its UI, or write raw HTML
-  (`v-html`, `innerHTML`, `insertAdjacentHTML`, `document.write`)
+- Include, create or inject iframes (or `frame`, `object`, `embed`) in its UI, or write unsanitized HTML
+  (`v-html`, `innerHTML`, `insertAdjacentHTML`, `document.write`). HTML goes through the SDK's sanitizing
+  `v-safe-html` directive instead ([Rendering HTML](#rendering-html))
 - Import another plugin's package, inject its providers, or read or write its data other than through the
   operations it exports; read or write core collections
 - Reach any organization other than the current one (the request's tenant)
@@ -416,7 +417,7 @@ vitest.config.mts              runs src/ui/**/*.spec.ts
     "lint": "eslint \"src/**/*.{ts,vue}\""
   },
   "peerDependencies": {                     // NEVER regular dependencies
-    "@unifyamerica/demleague-plugin-sdk": "^0.3.0",
+    "@unifyamerica/demleague-plugin-sdk": "^0.4.0",
     "@nestjs/common": "^12.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.0",
@@ -470,7 +471,8 @@ The template's `eslint.config.mjs` enforces, for non-test files:
   `document.createElement()`, and no raw HTML: `v-html`, `innerHTML`, `outerHTML`, `srcdoc`,
   `insertAdjacentHTML`, `createContextualFragment`, `setHTMLUnsafe`, `document.write`. The SPA's CSP
   (`frame-src 'none'; object-src 'none'`) blocks iframes at runtime too, so obfuscating one doesn't help. To
-  show another site, link to it.
+  show another site, link to it. To show HTML, use the SDK's `v-safe-html` directive, which sanitizes it
+  ([Rendering HTML](#rendering-html)).
 
 Spec files are exempt (UI tests import `pinia`, `@vue/test-utils` and `vitest`). These rules are also
 checked in review. Plugins run inside the API process, and their UI inside the SPA, so these rules are part
@@ -1373,6 +1375,45 @@ own messages. The SPA files them under `plugins.<vendor>.<module>`.
   code are generated. Write class names in full, not assembled from fragments.
 - If the package ships a stylesheet, tell the core team for the install PR: the SPA imports it in
   `frontend/src/plugins.config.ts`.
+
+### Rendering HTML
+
+Some content is HTML written by people, such as an org admin's welcome text. Render it with the SDK's
+`v-safe-html` directive, never `v-html` (which lint and the install check reject):
+
+```vue
+<script setup lang="ts">
+import { vSafeHtml } from '@unifyamerica/demleague-plugin-sdk/vue';
+defineProps<{ welcomeHtml: string }>();
+</script>
+
+<template>
+  <div class="prose" v-safe-html="welcomeHtml" />
+</template>
+```
+
+It works like `v-html`, but the SDK sanitizes the value with DOMPurify first, every time it changes. Scripts,
+event handler attributes, `javascript:` URLs, `style` elements and attributes, frames, `object`, `embed`,
+forms and their controls are removed, and links that open a new tab get `rel="noopener noreferrer"`.
+Formatting, lists, tables, links and images stay. `sanitizeHtml(html)` returns the same sanitized string, for
+example to check what will be shown. Plugin UI code runs in the SPA's JavaScript context, so this is what
+keeps someone's HTML from acting as the signed-in user: don't sanitize HTML some other way.
+
+### Dates and time zones
+
+The SDK passes [luxon](https://moment.github.io/luxon/) through, from the root entry (API) and from `/vue`
+(UI): `DateTime`, `Duration`, `Interval`, `Info`, `Zone`, `IANAZone`, `FixedOffsetZone` and their option
+types. Use it instead of adding a date package of your own:
+
+```ts
+import { DateTime } from '@unifyamerica/demleague-plugin-sdk/vue';
+
+// 7 pm in New York, as UTC
+const startsAt = DateTime.fromISO('2027-08-01T19:00', { zone: 'America/New_York' }).toUTC().toJSDate();
+```
+
+`Settings` isn't exported: it's global, so changing its default zone, locale or clock would change every
+other plugin's dates and the SPA's. Pass `{ zone }` and `{ locale }` on each call instead.
 
 ### Build output
 

@@ -51,6 +51,8 @@ export { ModuleCallsProxy } from './services/module-calls.proxy';
 export { PluginContext } from './services/plugin-context';
 export { PluginLogger } from './services/plugin-logger';
 
+export * from './luxon';
+
 export * from './errors/sdk-errors';
 export {
   validateManifest,

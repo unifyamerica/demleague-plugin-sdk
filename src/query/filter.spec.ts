@@ -1,3 +1,4 @@
+import { runInNewContext } from 'vm';
 import { PluginValidationError } from '../errors/sdk-errors';
 import {
   assertSafeDocument,
@@ -84,6 +85,16 @@ describe('assertSafeDocument', () => {
         meta: { at: new Date(), n: null },
         items: [{ a: 1 }],
       }),
+    ).not.toThrow();
+  });
+
+  it('should accept dates and objects from another realm', () => {
+    const foreign = runInNewContext(
+      '({ at: new Date(0), meta: { tags: ["x"] }, items: [{ a: 1 }] })',
+    ) as unknown;
+    expect(() => assertSafeDocument(foreign)).not.toThrow();
+    expect(() =>
+      assertSafeFilter({ at: { $gte: runInNewContext('new Date(0)') } }),
     ).not.toThrow();
   });
 
