@@ -84,9 +84,14 @@ export class InMemoryJobsProxy extends JobsProxy {
   constructor(
     private readonly context: TestPluginContext,
     private readonly organizations: ReadonlyMap<string, PluginOrganization>,
-    private readonly now: () => Date = () => new Date(),
+    private now: () => Date = () => new Date(),
   ) {
     super();
+  }
+
+  /** The time `schedule()` and friends see (what "now" and "a year ahead" are), and `runDue()`'s default. */
+  setClock(now: () => Date): void {
+    this.now = now;
   }
 
   /** Finds the plugin's `@JobHandler()` methods (done by the harness once the module is compiled). */

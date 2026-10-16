@@ -1666,6 +1666,7 @@ afterEach(() => harness.close());
 | `harness.calls.calls` / `harness.calls.unstub(namespace)` | The calls your code made (`{ namespace, operation, input }`) / make a module unavailable again |
 | `harness.jobs.pending()` / `harness.jobs.jobs` | Your pending jobs (soonest first) / every job, whatever its status (§11b) |
 | `await harness.jobs.runDue(at?)` / `run(keyOrId)` / `runSchedule(name, orgId?)` | Runs due jobs / one job / one occurrence of a schedule like the host does (actor `null`, in the job's organization), retrying failures with the host's backoff |
+| `harness.jobs.setClock(() => date)` | The time scheduling sees ("now", "at most a year ahead") and `runDue()`'s default: set it when your tests use fixed dates |
 | `await harness.invokeExport(operation, input, { caller })` | Runs one of your exported operations like the host does when `caller` calls it: checks `consumers` and the actor's ability from your grants, copies input and result, sets `PluginContext.caller()`. Needs an actor and a tenant |
 
 Use `createPluginTestingModule(Plugin, options)` instead when you need `.overrideProvider()` before

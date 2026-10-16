@@ -190,6 +190,22 @@ describe('harness jobs', () => {
     expect(jobs.runs.at(-1)).toEqual(['sweep:nightly', 'org-b', null, 1]);
   });
 
+  it('should schedule and run on the clock it is given', async () => {
+    harness.jobs.setClock(() => now);
+    expect(
+      (await proxy().schedule('remind', { payload: { text: 'a' } })).runAt,
+    ).toEqual(now);
+    expect(
+      (
+        await proxy().schedule('remind', {
+          delayMs: 1000,
+          payload: { text: 'b' },
+        })
+      ).runAt,
+    ).toEqual(later(1000));
+    expect((await harness.jobs.runDue()).length).toBe(1);
+  });
+
   it('should cancel expired jobs instead of running them', async () => {
     await proxy().schedule('remind', {
       runAt: later(1000),
