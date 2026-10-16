@@ -6,6 +6,7 @@ export { SDK_API_VERSION } from '../constants';
 export * from '../types/abilities';
 export * from '../types/calls';
 export * from '../types/events';
+export * from '../types/jobs';
 export * from '../types/lifecycle';
 export * from '../types/manifest';
 export * from '../types/permissions';

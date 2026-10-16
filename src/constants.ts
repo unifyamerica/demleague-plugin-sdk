@@ -18,3 +18,4 @@ export const PLUGIN_EXPORTED_OPERATION_METADATA =
 
 // Where the host puts the acting user (a `PluginActor`, never the raw user document) on the request
 export const PLUGIN_ACTOR_REQUEST_KEY = 'pluginActor';
+export const PLUGIN_JOB_HANDLER_METADATA = 'demleague:plugin:job-handler';

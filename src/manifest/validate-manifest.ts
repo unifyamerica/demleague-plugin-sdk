@@ -13,6 +13,13 @@ import {
   PluginExports,
 } from '../types/calls';
 import { isCoreEvent } from '../types/events';
+import {
+  isCronExpression,
+  isTimeZone,
+  JOB_NAME_PATTERN,
+  MAX_JOB_MAX_ATTEMPTS,
+  ScheduleScopes,
+} from '../types/jobs';
 import { ModuleLifecycleHooks } from '../types/lifecycle';
 import {
   DEFAULT_RESOURCE_LIMITS,
@@ -243,6 +250,7 @@ export function validateManifest(manifest: PluginManifest): string[] {
   validateUi(manifest.ui, problems);
   validateExports(manifest, problems);
   validateCalls(manifest.calls, namespace, problems);
+  validateJobs(manifest, problems);
 
   return problems;
 }
@@ -468,5 +476,111 @@ function validateUi(ui: PluginManifest['ui'], problems: string[]): void {
   }
   for (const duplicate of findDuplicates(slots)) {
     problems.push(`UI slot "${duplicate}" is declared more than once`);
+  }
+}
+
+const JOB_FIELDS = ['summary', 'timeoutMs', 'maxAttempts'];
+const SCHEDULE_FIELDS = ['summary', 'cron', 'timeZone', 'job', 'scope'];
+const isPositiveInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0;
+
+function validateJobs(manifest: PluginManifest, problems: string[]): void {
+  const { jobs, schedules } = manifest;
+  if (jobs !== undefined) {
+    if (!isObject(jobs)) {
+      problems.push('jobs must be an object of job name → declaration');
+    } else {
+      for (const [name, declaration] of Object.entries(jobs)) {
+        const where = `jobs["${name}"]`;
+        if (!JOB_NAME_PATTERN.test(name)) {
+          problems.push(
+            `${where}: job names are lowercase kebab-case, e.g. "round-end"`,
+          );
+        }
+        if (!isObject(declaration)) {
+          problems.push(`${where} must be an object`);
+          continue;
+        }
+        Object.keys(declaration)
+          .filter((key) => !JOB_FIELDS.includes(key))
+          .forEach((key) =>
+            problems.push(`${where}.${key} is not a known field`),
+          );
+        if (
+          declaration.summary !== undefined &&
+          typeof declaration.summary !== 'string'
+        ) {
+          problems.push(`${where}.summary must be a string`);
+        }
+        if (
+          declaration.timeoutMs !== undefined &&
+          !isPositiveInteger(declaration.timeoutMs)
+        ) {
+          problems.push(`${where}.timeoutMs must be a positive integer`);
+        }
+        if (
+          declaration.maxAttempts !== undefined &&
+          (!isPositiveInteger(declaration.maxAttempts) ||
+            declaration.maxAttempts > MAX_JOB_MAX_ATTEMPTS)
+        ) {
+          problems.push(
+            `${where}.maxAttempts must be an integer from 1 to ${MAX_JOB_MAX_ATTEMPTS}`,
+          );
+        }
+      }
+    }
+  }
+
+  if (schedules === undefined) {
+    return;
+  }
+  if (!isObject(schedules)) {
+    problems.push('schedules must be an object of schedule name → declaration');
+    return;
+  }
+  const declaredJobs = isObject(jobs) ? Object.keys(jobs) : [];
+  const scopes: string[] = Object.values(ScheduleScopes);
+  for (const [name, declaration] of Object.entries(schedules)) {
+    const where = `schedules["${name}"]`;
+    if (!JOB_NAME_PATTERN.test(name)) {
+      problems.push(
+        `${where}: schedule names are lowercase kebab-case, e.g. "nightly-cleanup"`,
+      );
+    }
+    if (!isObject(declaration)) {
+      problems.push(`${where} must be an object`);
+      continue;
+    }
+    Object.keys(declaration)
+      .filter((key) => !SCHEDULE_FIELDS.includes(key))
+      .forEach((key) => problems.push(`${where}.${key} is not a known field`));
+    if (
+      declaration.summary !== undefined &&
+      typeof declaration.summary !== 'string'
+    ) {
+      problems.push(`${where}.summary must be a string`);
+    }
+    if (!isCronExpression(declaration.cron)) {
+      problems.push(
+        `${where}.cron must be a five-field cron expression, e.g. "0 3 * * *"`,
+      );
+    }
+    if (
+      declaration.timeZone !== undefined &&
+      !isTimeZone(declaration.timeZone)
+    ) {
+      problems.push(
+        `${where}.timeZone must be an IANA time zone, e.g. "America/New_York"`,
+      );
+    }
+    if (
+      typeof declaration.job !== 'string' ||
+      !declaredJobs.includes(declaration.job)
+    ) {
+      problems.push(`${where}.job must name a job declared in manifest.jobs`);
+    }
+    if (!scopes.includes(declaration.scope as string)) {
+      problems.push(`${where}.scope must be one of ${scopes.join(', ')}`);
+    }
   }
 }

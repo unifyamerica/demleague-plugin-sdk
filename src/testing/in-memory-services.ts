@@ -124,6 +124,33 @@ export class TestPluginContext extends PluginContext {
     this.currentCaller = caller;
   }
 
+  /** Runs `fn` as the host runs jobs and handlers: without an acting user, in `tenant`; then restores the "request". */
+  async runAsSystem<T>(
+    tenant: PluginOrganization | null,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const saved = [
+      this.currentActor,
+      this.currentTenant,
+      this.currentEventUserId,
+      this.currentCaller,
+    ] as const;
+    this.currentActor = null;
+    this.currentTenant = tenant;
+    this.currentEventUserId = null;
+    this.currentCaller = null;
+    try {
+      return await fn();
+    } finally {
+      [
+        this.currentActor,
+        this.currentTenant,
+        this.currentEventUserId,
+        this.currentCaller,
+      ] = saved;
+    }
+  }
+
   /**
    * Like the host: whether the plugin may see this user. In an organization, its active members (here: users
    * with a membership in it); without one, only the acting user or the event's user.

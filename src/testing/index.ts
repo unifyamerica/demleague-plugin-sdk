@@ -3,6 +3,7 @@ import { Test, TestingModule, TestingModuleBuilder } from '@nestjs/testing';
 import { SDK_IDENTITY } from '../constants';
 import { getPluginDefinition } from '../decorators/plugin-module.decorator';
 import { DataProxy } from '../services/data.proxy';
+import { JobsProxy } from '../services/jobs.proxy';
 import { ModuleCallsProxy } from '../services/module-calls.proxy';
 import { EventBusProxy } from '../services/event-bus.proxy';
 import { ModuleLifecycleProxy } from '../services/module-lifecycle.proxy';
@@ -20,6 +21,7 @@ import {
   RecordingPluginLogger,
   TestPluginContext,
 } from './in-memory-services';
+import { InMemoryJobsProxy } from './jobs';
 import {
   InMemoryModuleCallsProxy,
   invokeExportedOperation,
@@ -27,6 +29,8 @@ import {
 
 export * from './in-memory-services';
 export { InMemoryModuleCallsProxy } from './module-calls';
+export { InMemoryJobsProxy } from './jobs';
+export type { InMemoryJob, JobRunResult } from './jobs';
 export type {
   RecordedCall,
   StubbedCallScope,
@@ -41,7 +45,7 @@ export interface PluginTestingOptions {
   // The organization the request acts in (its `X-Tenant`), `null` (the default) for none
   tenant?: PluginOrganization | null;
   users?: PluginUser[];
-  // The organizations `events.deliver()` and `lifecycle` run in, by id (a bare one for an id not listed)
+  // The organizations `events.deliver()`, `lifecycle` and `jobs` run in, by id (a bare one for an id not listed)
   organizations?: PluginOrganization[];
   // Overrides the manifest's permissions, e.g. to test what happens without one
   permissions?: PluginPermission[];
@@ -57,6 +61,8 @@ export interface PluginTestHarness {
   logger: RecordingPluginLogger;
   // Other modules' operations, as stubs (`calls.stub(namespace, operation, handler)`)
   calls: InMemoryModuleCallsProxy;
+  // The plugin's scheduled jobs, run when the test says (`jobs.runDue(at)`, `jobs.run(key)`, `jobs.runSchedule(name)`)
+  jobs: InMemoryJobsProxy;
   /**
    * Calls one of this plugin's exported operations as module `caller` would, with the host's checks (exported to
    * the caller, the acting user's ability, plain JSON both ways). Needs an actor and a tenant.
@@ -127,9 +133,14 @@ function testRuntimeModule(
         provide: ModuleCallsProxy,
         useValue: new InMemoryModuleCallsProxy(context),
       },
+      {
+        provide: JobsProxy,
+        useValue: new InMemoryJobsProxy(context, organizations),
+      },
     ],
     exports: [
       ModuleCallsProxy,
+      JobsProxy,
       PluginContext,
       UsersProxy,
       DataProxy,
@@ -170,6 +181,8 @@ export async function createPluginTestHarness(
   await module.init();
   const context = module.get(PluginContext) as TestPluginContext;
   const providers = getPluginDefinition(pluginModule)!.providers;
+  const jobs = module.get(JobsProxy) as InMemoryJobsProxy;
+  jobs.attach(module, providers);
 
   return {
     module,
@@ -180,6 +193,7 @@ export async function createPluginTestHarness(
     lifecycle: module.get(ModuleLifecycleProxy) as InMemoryModuleLifecycleProxy,
     logger: module.get(PluginLogger) as RecordingPluginLogger,
     calls: module.get(ModuleCallsProxy) as InMemoryModuleCallsProxy,
+    jobs,
     invokeExport: <TResult = JsonValue>(
       operation: string,
       input: JsonValue | undefined,
