@@ -6,6 +6,8 @@ export type { PluginUi } from './create-plugin-ui';
 export { installPluginHost } from './host';
 export type * from './types';
 export { storeToRefs } from 'pinia';
+export { sanitizeHtml, vSafeHtml } from './safe-html';
+export * from '../luxon';
 
 // The manifest contract, so UI code needs a single SDK import
 export * from '../manifest';

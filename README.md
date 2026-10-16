@@ -191,11 +191,16 @@ entry can also be a group of links, for sub-navigation: `{ labelKey, icon, child
 - `useToast()`, `useConfirm()`
 - `defineStore()`, Pinia setup stores with namespaced ids
 
+`/vue` also exports `vSafeHtml` (the `v-safe-html` directive) and `sanitizeHtml()`, to show HTML such as an
+org admin's text after DOMPurify removes scripts, event handlers, frames, forms and styles. Both entries pass
+[luxon](https://moment.github.io/luxon/) through (`DateTime`, `Duration`, `Interval`, `Info`, the zones; not
+the global `Settings`), so plugins don't need a date package of their own.
+
 `define()` throws if the UI doesn't match the manifest: an ability on an undeclared subject, or a menu
 without its slot in `manifest.ui.slots`. A UI may only import `@unifyamerica/demleague-plugin-sdk/vue`, `vue`, `primevue`
 and `primeicons`, its own files and the manifest. It may not include, create or inject iframes (nor
-`frame`, `object`, `embed`) or write raw HTML (`v-html`, `innerHTML`): lint and the install PR's check
-reject them, and the SPA's CSP (`frame-src 'none'`) blocks them. Style it with Tailwind utility classes. Build it with Vite in
+`frame`, `object`, `embed`) or write unsanitized HTML (`v-html`, `innerHTML`; use `v-safe-html`): lint and
+the install PR's check reject them, and the SPA's CSP (`frame-src 'none'`) blocks frames. Style it with Tailwind utility classes. Build it with Vite in
 library mode, keeping those packages external (see `plugins/acme-notes/vite.config.mts`).
 
 ## Rules the host enforces
