@@ -94,6 +94,18 @@ export class PluginUndeclaredCallError extends PluginSdkError {
   }
 }
 
+// The plugin scheduled a job it didn't declare in `manifest.jobs`
+export class PluginUndeclaredJobError extends PluginSdkError {
+  readonly code = 'PLUGIN_UNDECLARED_JOB';
+  readonly status = 500;
+
+  constructor(namespace: string, job: string) {
+    super(
+      `Plugin "${namespace}" did not declare the job "${job}" (manifest.jobs)`,
+    );
+  }
+}
+
 // The called module isn't there right now: not installed, disabled in the registry, or not turned on in this
 // organization. Dependencies between modules are soft: callers handle this, e.g. by hiding what needs it.
 export class PluginCallUnavailableError extends PluginSdkError {

@@ -334,3 +334,91 @@ describe('validateManifest: exports and calls', () => {
     ]);
   });
 });
+
+describe('validateManifest: jobs and schedules', () => {
+  it('should accept jobs and schedules', () => {
+    expect(
+      validateManifest(
+        validManifest({
+          jobs: {
+            'round-end': {
+              summary: 'Close a round',
+              timeoutMs: 5000,
+              maxAttempts: 5,
+            },
+            cleanup: {},
+          },
+          schedules: {
+            'nightly-cleanup': {
+              cron: '0 3 * * *',
+              timeZone: 'America/New_York',
+              job: 'cleanup',
+              scope: 'organization',
+            },
+            weekly: {
+              cron: '*/15 9-17 * JAN-DEC MON-FRI',
+              job: 'cleanup',
+              scope: 'global',
+            },
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('should reject malformed jobs', () => {
+    expect(
+      validateManifest(
+        validManifest({
+          jobs: {
+            RoundEnd: {},
+            slow: { timeoutMs: 0, maxAttempts: 11, retries: 2 } as never,
+          },
+        }),
+      ),
+    ).toEqual([
+      'jobs["RoundEnd"]: job names are lowercase kebab-case, e.g. "round-end"',
+      'jobs["slow"].retries is not a known field',
+      'jobs["slow"].timeoutMs must be a positive integer',
+      'jobs["slow"].maxAttempts must be an integer from 1 to 10',
+    ]);
+  });
+
+  it('should reject malformed schedules', () => {
+    expect(
+      validateManifest(
+        validManifest({
+          jobs: { cleanup: {} },
+          schedules: {
+            nightly: {
+              cron: '0 3 * *',
+              timeZone: 'Mars/Olympus',
+              job: 'other',
+              scope: 'tenant',
+            } as never,
+          },
+        }),
+      ),
+    ).toEqual([
+      'schedules["nightly"].cron must be a five-field cron expression, e.g. "0 3 * * *"',
+      'schedules["nightly"].timeZone must be an IANA time zone, e.g. "America/New_York"',
+      'schedules["nightly"].job must name a job declared in manifest.jobs',
+      'schedules["nightly"].scope must be one of organization, global',
+    ]);
+  });
+
+  it('should accept the job limits', () => {
+    expect(
+      validateManifest(
+        validManifest({
+          limits: {
+            jobsPerMinute: 60,
+            maxPendingJobs: 100,
+            jobTimeoutMs: 5000,
+            maxConcurrentJobs: 1,
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+});
