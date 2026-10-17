@@ -1,6 +1,6 @@
 {
   "name": "@unifyamerica/demleague-plugin-sdk",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "The only package a DemLeagueOS plugin may import from the platform: manifest types, decorators, host service contracts, the Vue UI contract and test harnesses",
   "repository": {
     "type": "git",

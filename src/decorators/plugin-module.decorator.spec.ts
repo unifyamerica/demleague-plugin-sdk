@@ -1,12 +1,11 @@
 import { Controller, Get, Injectable } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { SDK_API_VERSION, SDK_IDENTITY } from '../constants';
+import { SDK_IDENTITY } from '../constants';
 import { PluginManifestError } from '../errors/sdk-errors';
 import { PluginManifest } from '../types/manifest';
 import { getPluginDefinition, PluginModule } from './plugin-module.decorator';
 
 const manifest: PluginManifest = {
-  sdkApiVersion: SDK_API_VERSION,
   namespace: 'acme.widgets',
   version: '0.1.0',
   displayName: 'Widgets',

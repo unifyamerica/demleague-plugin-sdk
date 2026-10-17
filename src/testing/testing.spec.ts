@@ -1,5 +1,4 @@
 import { Controller, Get, Injectable, OnModuleInit } from '@nestjs/common';
-import { SDK_API_VERSION } from '../constants';
 import { PluginModule } from '../decorators/plugin-module.decorator';
 import {
   PluginPayloadTooLargeError,
@@ -81,7 +80,6 @@ class CounterController {
 
 @PluginModule({
   manifest: {
-    sdkApiVersion: SDK_API_VERSION,
     namespace: 'acme.counter',
     version: '1.0.0',
     displayName: 'Counter',

@@ -94,7 +94,8 @@ export const DEFAULT_RESOURCE_LIMITS: Required<PluginResourceLimits> = {
 // The plugin's own declaration of what it is and what it needs. Authored by the plugin, validated against
 // the core team's namespace registry by the host at startup.
 export interface PluginManifest {
-  sdkApiVersion: number;
+  /** @deprecated Ignored, and removed in 1.0: leave it out (see `SDK_API_VERSION`). */
+  sdkApiVersion?: number;
   // `<vendor>.<module>`, lowercase kebab-case segments, e.g. `acme.notes`
   namespace: string;
   version: string;

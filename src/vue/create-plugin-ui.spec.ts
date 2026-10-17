@@ -1,6 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { ref } from 'vue';
-import { SDK_API_VERSION } from '../constants';
 import { PluginManifest } from '../types/manifest';
 import { createPluginUi } from './create-plugin-ui';
 import { getPluginHost, installPluginHost } from './host';
@@ -11,7 +10,6 @@ import {
 } from './testing';
 
 const manifest: PluginManifest = {
-  sdkApiVersion: SDK_API_VERSION,
   namespace: 'acme.notes',
   version: '1.0.0',
   displayName: 'Notes',

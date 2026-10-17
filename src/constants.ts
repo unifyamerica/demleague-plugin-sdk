@@ -1,5 +1,8 @@
-// Bumped only on a breaking change to the plugin contract. A plugin built against another API version is
-// refused at startup instead of failing in some subtle way at runtime.
+/**
+ * @deprecated Ignored, and removed in 1.0. A plugin's manifest read it from the host's copy of the SDK (a peer
+ * dependency), so it always matched. What a plugin is compatible with is its SDK peer range, which DemLeagueOS
+ * checks on the install PR, and breaking changes bump the SDK's major version.
+ */
 export const SDK_API_VERSION = 1;
 
 // Unique per copy of the SDK (deliberately NOT `Symbol.for`). The host compares it with its own copy, so a

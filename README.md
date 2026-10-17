@@ -32,7 +32,7 @@ it), and the token stays out of the repo, in your user `~/.npmrc`:
 ```
 
 Then `npm install -D @unifyamerica/demleague-plugin-sdk` and list it in `peerDependencies` too, as a range up
-to the next major (`">=0.5.0 <1.0.0"`, not `^0.5.0`, which for `0.x` stops at the next minor; see Versioning). The package
+to the next major (`">=0.6.0 <1.0.0"`, not `^0.6.0`, which for `0.x` stops at the next minor; see Versioning). The package
 is public, but GitHub Packages still needs a token to install from it. Plugins are named
 `@unifyamerica/demleague-plugin-<vendor>-<module>` and live in a repo of the same name in the `unifyamerica`
 org (see the [plugin developer guide](PLUGIN_DEVELOPER_GUIDE.md), §16). The example plugin,
@@ -44,7 +44,6 @@ template for new ones.
 ```ts
 @PluginModule({
   manifest: {
-    sdkApiVersion: SDK_API_VERSION,
     namespace: 'acme.notes',                 // <vendor>.<module>, kebab-case
     version: '0.1.0',                        // keep in sync with package.json
     displayName: 'Notes',
@@ -321,15 +320,20 @@ const host = installTestPluginHost({
 
 ## Versioning
 
-The SDK follows semver independently of the API. `SDK_API_VERSION` is bumped only on a breaking change, and
-the host refuses plugins built against another API version.
+The SDK follows semver independently of the API. A plugin's SDK peer range is what says which SDK versions it
+works with: DemLeagueOS checks it against its pinned SDK on the install PR, and the host refuses a second SDK
+copy at boot.
 
 - **Patch:** bug fixes and better error messages.
 - **Minor:** new proxy methods, new core events, new optional manifest fields, new platform roles, new UI
   slots or composables. Plugins declare the SDK peer as `">=<the minor they need> <1.0.0"`, so a minor
   doesn't force every plugin to release again.
 - **Major:** removed or renamed proxy methods, changed DTO shapes, or new required manifest fields. Ship it
-  with a migration guide and a deprecation window.
+  with a migration guide and a deprecation window: the replacement and the `@deprecated` marker come first,
+  in a minor, so a plugin that has moved off the deprecated API can declare `">=<that minor> <2.0.0"` and
+  needs no release when DemLeagueOS moves to the major.
+- **Deprecated, removed in 1.0:** `SDK_API_VERSION` and the manifest's `sdkApiVersion` (ignored since 0.6.0;
+  leave them out).
 
 Anything exported from `src/index.ts` is part of the contract.
 

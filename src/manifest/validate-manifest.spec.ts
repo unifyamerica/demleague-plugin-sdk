@@ -1,11 +1,9 @@
-import { SDK_API_VERSION } from '../constants';
 import { PluginManifest } from '../types/manifest';
 import { normalizeEndpointPath, validateManifest } from './validate-manifest';
 
 const validManifest = (
   overrides: Partial<PluginManifest> = {},
 ): PluginManifest => ({
-  sdkApiVersion: SDK_API_VERSION,
   namespace: 'acme.notes',
   version: '1.0.0',
   displayName: 'Notes',
@@ -28,10 +26,8 @@ describe('validateManifest', () => {
     expect(validateManifest(validManifest())).toEqual([]);
   });
 
-  it('should reject another SDK API version', () => {
-    expect(validateManifest(validManifest({ sdkApiVersion: 99 }))).toEqual([
-      expect.stringContaining('sdkApiVersion 99'),
-    ]);
+  it('should ignore the deprecated sdkApiVersion', () => {
+    expect(validateManifest(validManifest({ sdkApiVersion: 99 }))).toEqual([]);
   });
 
   it.each([

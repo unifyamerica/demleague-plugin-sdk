@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { SDK_API_VERSION } from '../constants';
 import { JobHandler } from '../decorators/job-handler.decorator';
 import { PluginModule } from '../decorators/plugin-module.decorator';
 import {
@@ -72,7 +71,6 @@ class ReminderJobs {
 
 @PluginModule({
   manifest: {
-    sdkApiVersion: SDK_API_VERSION,
     namespace: 'acme.reminders',
     version: '1.0.0',
     displayName: 'Reminders',
