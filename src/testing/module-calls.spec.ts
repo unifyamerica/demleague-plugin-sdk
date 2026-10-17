@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { SDK_API_VERSION } from '../constants';
 import { ExportedOperation } from '../decorators/exported-operation.decorator';
 import { PluginModule } from '../decorators/plugin-module.decorator';
 import {
@@ -57,7 +56,6 @@ class ItemsExports {
 
 @PluginModule({
   manifest: {
-    sdkApiVersion: SDK_API_VERSION,
     namespace: 'acme.items',
     version: '1.0.0',
     displayName: 'Items',
@@ -92,7 +90,6 @@ class CrmService {
 
 @PluginModule({
   manifest: {
-    sdkApiVersion: SDK_API_VERSION,
     namespace: 'acme.crm',
     version: '1.0.0',
     displayName: 'CRM',

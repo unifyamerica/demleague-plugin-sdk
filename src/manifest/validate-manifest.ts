@@ -1,4 +1,3 @@
-import { SDK_API_VERSION } from '../constants';
 import {
   CORE_SUBJECTS,
   GRANTABLE_ORGANIZATION_ROLES,
@@ -102,12 +101,6 @@ export function validateManifest(manifest: PluginManifest): string[] {
 
   if (!manifest || typeof manifest !== 'object') {
     return ['manifest is required'];
-  }
-
-  if (manifest.sdkApiVersion !== SDK_API_VERSION) {
-    problems.push(
-      `sdkApiVersion ${manifest.sdkApiVersion} is not supported (expected ${SDK_API_VERSION})`,
-    );
   }
 
   const namespace = manifest.namespace;

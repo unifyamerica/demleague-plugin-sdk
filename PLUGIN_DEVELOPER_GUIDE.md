@@ -13,7 +13,7 @@ project managers, can start with [At a glance](#1-at-a-glance) and
 [How a plugin gets into production](#3-how-a-plugin-gets-into-production), then use
 [the checklist](#17-submission-checklist) to follow progress.
 
-> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.5.x, `SDK_API_VERSION = 1`, NestJS 12, Node 24, Vue 3.5,
+> **Contract version:** `@unifyamerica/demleague-plugin-sdk` 0.6.x, NestJS 12, Node 24, Vue 3.5,
 > PrimeVue 4.
 
 ---
@@ -283,10 +283,9 @@ A minimal but complete plugin:
 
 ```ts
 // src/manifest.ts
-import { type PluginManifest, SDK_API_VERSION } from '@unifyamerica/demleague-plugin-sdk/manifest';
+import { type PluginManifest } from '@unifyamerica/demleague-plugin-sdk/manifest';
 
 export const TASKS_MANIFEST: PluginManifest = {
-  sdkApiVersion: SDK_API_VERSION,
   namespace: 'myvendor.tasks',
   version: '0.1.0',                       // keep equal to package.json
   displayName: 'Tasks',
@@ -422,7 +421,7 @@ vitest.config.mts              runs src/ui/**/*.spec.ts
     "lint": "eslint \"src/**/*.{ts,vue}\""
   },
   "peerDependencies": {                     // NEVER regular dependencies
-    "@unifyamerica/demleague-plugin-sdk": ">=0.5.0 <1.0.0",  // the minor your code needs, up to the next major (§20)
+    "@unifyamerica/demleague-plugin-sdk": ">=0.6.0 <1.0.0",  // the minor your code needs, up to the next major (§20)
     "@nestjs/common": "^12.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.0",
@@ -489,7 +488,7 @@ of the safety model.
 
 ```ts
 interface PluginManifest {
-  sdkApiVersion: number;              // always SDK_API_VERSION
+  sdkApiVersion?: number;             // deprecated: ignored, removed in 1.0; leave it out
   namespace: string;                  // '<vendor>.<module>'
   version: string;                    // semver, equal to package.json
   displayName: string;                // non-empty
@@ -548,7 +547,7 @@ problem at once.
 
 | Field | Rule |
 | --- | --- |
-| `sdkApiVersion` | Must equal the SDK's `SDK_API_VERSION` (currently `1`). |
+| `sdkApiVersion` | Deprecated and ignored since 0.6.0, removed in 1.0. Leave it out. |
 | `namespace` | `^[a-z][a-z0-9-]{1,30}\.[a-z][a-z0-9-]{1,40}$`. The vendor can't be `core`, `plugins`, `auth`, `api` or `admin`. |
 | `version` | Semver (`1.2.3`, `1.2.3-beta.1`, `1.2.3+build`). |
 | `displayName` | Required and not blank. |
@@ -2006,13 +2005,16 @@ These come from the current in-process plugin model. They're listed so you can p
   - **Minor:** new proxy methods, new core events, new optional manifest fields (as `abilities`, `ui`,
     `exports`, `calls`, `jobs` and `schedules` were), new grantable organization roles.
   - **Major:** removed or renamed methods, changed DTO shapes, new required manifest fields. Ships with a
-    migration guide and a deprecation window.
-- `SDK_API_VERSION` is bumped only on breaking changes. The host refuses plugins built against another API
-  version, so you must rebuild and release a new version (a new tag).
-- **Declare the SDK peer as a range up to the next major**: `">=0.5.0 <1.0.0"` (the lowest minor whose features
-  you use). For a `0.x` version, `^0.5.0` means `<0.6.0`, so when DemLeagueOS moves to the next additive minor,
+    migration guide and a deprecation window: the replacement and the `@deprecated` marker come first, in a
+    minor. Once your plugin no longer uses anything deprecated, you can declare `">=<that minor> <2.0.0"`, and
+    DemLeagueOS moving to the major won't need a release from you.
+- **Declare the SDK peer as a range up to the next major**: `">=0.6.0 <1.0.0"` (the lowest minor whose features
+  you use). For a `0.x` version, `^0.6.0` means `<0.7.0`, so when DemLeagueOS moves to the next additive minor,
   npm would give your plugin a second SDK copy and the host would refuse it until you released again. Minors only
-  add, and breaking changes bump `SDK_API_VERSION`, which the host checks, so the wider range is safe.
+  add, and breaking changes bump the major, which your range excludes, so the wider range is safe. The range is
+  the whole compatibility contract: the install PR fails if it excludes the SDK DemLeagueOS pins (§16).
+- **Deprecated, removed in 1.0:** `SDK_API_VERSION` and the manifest's `sdkApiVersion`. Since 0.6.0 they're
+  ignored (the manifest read the constant from the host's own SDK copy, so it always matched); leave them out.
 - Everything exported from the SDK's entry points (`.`, `/testing`, `/manifest`, `/vue`, `/vue/testing`)
   is the contract, except `installPluginHost`, which only the SPA calls. Don't depend on internals or on host
   behavior that isn't documented here.
