@@ -1806,6 +1806,9 @@ Two GitHub Actions workflows run on the install PR:
      signatures. (It doesn't cover GitHub Packages; the next step does.)
   2. `scripts/ci/check-plugins.mjs`:
      - The pins are exact, and the API and the SPA pin the same version.
+     - The SDK is a peer dependency whose range includes the SDK version DemLeagueOS pins, and your package
+       has no copy of its own. A narrower range (`^0.4.0` once DemLeagueOS pins 0.5.0) fails here, before
+       the boot gate, with the range to widen to (§20).
      - The package is in both `plugins.config.ts` files and has a registry entry.
      - Provenance: GitHub Packages' tarball for that version (`npm pack` downloads it) has the integrity
        recorded in `package-lock.json`, and `gh attestation verify` accepts it as built by the org's release
@@ -1918,7 +1921,7 @@ DemLeagueOS README (internal to the core team), under "Onboarding a plugin vendo
 | --- | --- | --- |
 | `Invalid plugin manifest for X: ...` on import | `validateManifest` problems | Read the listed problems. Run `manifest.spec.ts`. |
 | API refuses to start: plugin built with another SDK copy | SDK listed in `dependencies` | Move it to `peerDependencies`, then reinstall. |
-| Same, after DemLeagueOS upgraded the SDK | Your peer range (e.g. `^0.4.0`) excludes its version, so npm installed a second copy for your plugin | Widen it to `">=0.4.0 <1.0.0"` and release (§20). |
+| Same, after DemLeagueOS upgraded the SDK, or the install PR fails with `peer range "..." excludes the pinned ...` | Your peer range (e.g. `^0.4.0`) excludes its version, so npm installed a second copy for your plugin | Widen it to `">=0.4.0 <1.0.0"` and release (§20). |
 | API refuses to start: route not declared, or declared endpoint missing | Controller and manifest are out of sync | Make `@Controller` + handler paths match `endpoints[].path` exactly. |
 | API refuses to start: `X injects Y, which is not an SDK service...` | Injected a core service, `ModuleRef`, a DB connection, or a provider not listed in `providers` | Only inject SDK proxies and your own providers, and add them to `providers`. |
 | API refuses to start: permission / public endpoint not approved | Registry entry is missing or outdated | Request approval in `namespace-registry.json`. |
